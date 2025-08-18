@@ -1,8 +1,7 @@
 cabal-version:      3.0
 name:               hurve
 version:            0.1.0.0
--- synopsis:
--- description:
+description:        A Haskell implementation of Curve Fever https://en.wikipedia.org/wiki/Achtung,_die_Kurve! 
 license:            MIT
 license-file:       LICENSE
 author:             h22roscoe
@@ -11,16 +10,43 @@ maintainer:         h22roscoe@gmail.com
 category:           Game
 build-type:         Simple
 extra-doc-files:    CHANGELOG.md
--- extra-source-files:
+extra-source-files: static/index.html
 
-common warnings
-    ghc-options: -Wall
+common common-settings
+    ghc-options:      -O2 -Wall -threaded -rtsopts -with-rtsopts=-N
+    default-language: Haskell2010
+    build-depends:    base ==4.19.2.0
+                    , aeson ==2.2.2.0
+                    , async ==2.2.5
+                    , bytestring ==0.12.1.0
+                    , containers ==0.6.8
+                    , http-types ==0.12.4
+                    , servant ==0.20.3.0
+                    , servant-server ==0.20.3.0
+                    , stm ==2.5.3.1
+                    , text ==2.1.1
+                    , time ==1.12.2
+                    , uuid ==1.3.16
+                    , uuid-types ==1.0.6
+                    , vector ==0.13.2.0
+                    , wai ==3.2.4
+                    , wai-cors ==0.2.7
+                    , wai-extra ==3.1.17
+                    , wai-middleware-static ==0.9.3
+                    , wai-websockets ==3.0.1.2
+                    , warp ==3.4.8
+                    , websockets ==0.13.0.0
 
 executable hurve
-    import:           warnings
-    main-is:          Main.hs
-    -- other-modules:
-    -- other-extensions:
-    build-depends:    base ^>=4.19.2.0
+    import:           common-settings
     hs-source-dirs:   app
-    default-language: Haskell2010
+    main-is:          Main.hs
+    other-modules:
+        Game.Types
+        Game.Engine
+        Room.Runtime
+        Lobby.API
+        Lobby.Server
+        Web.WS
+        Web.SSE
+
