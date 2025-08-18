@@ -1,91 +1,207 @@
 <!doctype html>
 <html lang="en">
+
 <head>
   <meta charset="utf-8" />
-  <title>Hurve</title>
+  <title>Hurve Lobby</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    :root { --bg:#0b0d12; --fg:#e8eef8; --muted:#94a3b8; }
-    html, body { height:100%; margin:0; background:var(--bg); color:var(--fg);
-      font:14px/1.35 system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, "Helvetica Neue", Arial; }
-    .wrap { display:flex; flex-direction:column; height:100%; }
-    header, footer { padding:10px 12px; display:flex; gap:12px; align-items:center; border-bottom:1px solid #1f2937; }
-    footer { border-top:1px solid #1f2937; border-bottom:none; color:var(--muted); }
-    .pill { padding:4px 8px; border-radius:999px; background:#111827; color:var(--muted); }
-    .ok { color:#22c55e; } .bad { color:#ef4444; }
-    #arena { flex:1; display:grid; place-items:center; padding:12px; }
-    canvas { background:#000; box-shadow:0 8px 30px rgba(0,0,0,.45); border-radius:12px; image-rendering:pixelated; }
-    code { color:var(--fg); background:#0f172a; padding:2px 6px; border-radius:6px; }
-    .legend { margin-left:auto; display:flex; gap:12px; align-items:center; }
-    .dot { width:10px; height:10px; border-radius:50%; display:inline-block; margin-right:6px; }
+    :root {
+      /* Dark theme colours */
+      --bg: #0b0d12;
+      --fg: #e8eef8;
+      --muted: #94a3b8;
+      --accent: #22d3ee;
+    }
+
+    html,
+    body {
+      height: 100%;
+      margin: 0;
+      background: var(--bg);
+      color: var(--fg);
+      font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, Ubuntu, Cantarell, "Helvetica Neue", Arial, sans-serif;
+    }
+
+    .wrap {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+    }
+
+    header {
+      padding: 10px 12px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+      border-bottom: 1px solid #1f2937;
+    }
+
+    header input {
+      padding: 4px 8px;
+      border: 1px solid #374151;
+      border-radius: 6px;
+      background: #111827;
+      color: var(--fg);
+    }
+
+    header button {
+      padding: 6px 12px;
+      border: none;
+      border-radius: 6px;
+      background: var(--accent);
+      color: #000;
+      cursor: pointer;
+    }
+
+    main {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .room {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      background: #0f172a;
+      border-radius: 6px;
+      padding: 8px 12px;
+    }
+
+    .room button {
+      margin-left: auto;
+      padding: 4px 8px;
+      border: none;
+      border-radius: 4px;
+      background: var(--accent);
+      color: #000;
+      cursor: pointer;
+    }
+
+    footer {
+      padding: 10px 12px;
+      border-top: 1px solid #1f2937;
+      color: var(--muted);
+    }
   </style>
 </head>
+
 <body>
-<div class="wrap">
-  <header>
-    <strong>Hurve Fever</strong>
-    <span class="pill">WS: <span id="ws-status" class="bad">disconnected</span></span>
-    <span class="pill">tick: <span id="tick">—</span></span>
-    <span class="pill">RTT: <span id="rtt">—</span> ms</span>
-    <span class="pill">you: <span id="pid">—</span></span>
-    <span class="legend" id="legend"></span>
-  </header>
-
-  <div id="arena">
-    <canvas id="canvas" width="800" height="600"></canvas>
+  <div class="wrap">
+    <header>
+      <strong>Hurve Lobby</strong>
+      <label>Name: <input id="displayName" type="text" placeholder="Your name" /></label>
+      <button id="createRoom">Create Room</button>
+      <button id="refreshRooms">Refresh</button>
+    </header>
+    <main id="roomsList">
+      <!-- Rooms will appear here -->
+    </main>
+    <footer>
+      Select a room to play Curve Fever. Use the controls in game: left/right arrows (or A/D) to turn.
+    </footer>
   </div>
-
-  <footer>
-    Controls: <code>←/A</code> left, <code>→/D</code> right, release = straight.
-  </footer>
-</div>
-
-<script>
-(() => {
-  const WS_URL = (location.protocol === "https:" ? "wss://" : "ws://") + (location.hostname || "localhost") + ":9160/ws/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000";
-  const HEARTBEAT_MS = 500;
-  const SCALE = 1;
-
-  const canvas = document.getElementById("canvas");
-  const ctx = canvas.getContext("2d", { alpha:false, desynchronized:true });
-  const elWS = document.getElementById("ws-status");
-  const elTick = document.getElementById("tick");
-  const elRTT = document.getElementById("rtt");
-  const elPID = document.getElementById("pid");
-  const elLegend = document.getElementById("legend");
-
-  let socket=null, myPid=null, seq=1, currentTurn="Straight", lastSentTurn="Straight";
-  let world=null, rttMs=null; const pingSentAt = new Map();
-  let trailImg=null, trailDirty=false, trailColor=[34,211,238];
-
-  function setWSStatus(ok){ elWS.textContent=ok?"connected":"disconnected"; elWS.className=ok?"ok":"bad"; }
-  function applyWorldResize(){ if(!world) return; const w=Math.round(world.width*SCALE),h=Math.round(world.height*SCALE); if(canvas.width!==w||canvas.height!==h){ canvas.width=w; canvas.height=h; trailImg=ctx.createImageData(w,h); trailImg.data.fill(0); for(let i=3;i<trailImg.data.length;i+=4) trailImg.data[i]=255; trailDirty=true; } }
-  function setPixel(img,x,y){ if(x<0||y<0||x>=img.width||y>=img.height) return; const i=(y*img.width+x)*4; const d=img.data; d[i]=34; d[i+1]=211; d[i+2]=238; d[i+3]=255; }
-  function rebuildTrail(trails){ if(!trailImg) return; trailImg.data.fill(0); for(let i=3;i<trailImg.data.length;i+=4) trailImg.data[i]=255; for(const cell of trails){ const x=cell[0], y=cell[1]; setPixel(trailImg,x,y); } trailDirty=true; }
-  function drawTrail(){ if(trailImg&&trailDirty){ ctx.putImageData(trailImg,0,0); trailDirty=false; } }
-  function drawPlayers(){ if(!world||!world.players) return; for(const p of world.players){ const x=Number(p.pos.px)*SCALE; const y=Number(p.pos.py)*SCALE; const r=(world.headRadiusPx||2)*SCALE; ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fillStyle=p.alive?"#22d3ee":"rgba(120,120,120,0.7)"; ctx.fill(); const th=Number(p.dir); ctx.beginPath(); ctx.moveTo(x,y); ctx.lineTo(x+Math.cos(th)*(r+4), y+Math.sin(th)*(r+4)); ctx.strokeStyle="#fff"; ctx.lineWidth=1; ctx.stroke(); } }
-  function updateLegend(){ elLegend.innerHTML=""; if(!world||!world.players) return; for(const p of world.players){ const tag=document.createElement("span"); tag.innerHTML=`<span class="dot" style="background:#22d3ee"></span>P${p.pid}`; elLegend.appendChild(tag); } }
-
-  function connect(){ if(socket) try{socket.close()}catch{}; socket = new WebSocket(WS_URL); socket.onopen=()=>{ setWSStatus(true); sendInput("Straight"); lastSentTurn="Straight"; };
-    socket.onmessage=(ev)=>{ let msg; try{ msg=JSON.parse(ev.data);}catch{return;} if(Array.isArray(msg)){ const [t,...rest]=msg; if(t==="welcome"){ const [pid,w]=rest; myPid=pid; elPID.textContent=pid; world=w; applyWorldResize(); updateLegend(); }
-      else if(t==="state"){ const [tick, obj]=rest; world=obj.world||world; elTick.textContent=String(tick); if(world.trails) rebuildTrail(world.trails); updateLegend(); sendInput(currentTurn); }
-    }};
-    socket.onclose=()=>{ setWSStatus(false); setTimeout(connect,1000); };
-  }
-
-  function sendInput(turn){ if(!socket||socket.readyState!==1||myPid==null) return; const payload=["input", seq, myPid, turn]; socket.send(JSON.stringify(payload)); pingSentAt.set(seq, performance.now()); seq++; }
-
-  const keys=new Set();
-  addEventListener("keydown", e=>{ if(["ArrowLeft","ArrowRight","KeyA","KeyD"].includes(e.code)) e.preventDefault(); if(!keys.has(e.code)){ keys.add(e.code); updateTurn(); maybeSend(); }});
-  addEventListener("keyup", e=>{ if(keys.has(e.code)){ keys.delete(e.code); updateTurn(); maybeSend(); }});
-  function updateTurn(){ const left=keys.has("ArrowLeft")||keys.has("KeyA"); const right=keys.has("ArrowRight")||keys.has("KeyD"); currentTurn = left&&!right?"Left": right&&!left?"Right":"Straight"; }
-  function maybeSend(){ if(currentTurn!==lastSentTurn){ sendInput(currentTurn); lastSentTurn=currentTurn; }}
-  setInterval(()=>sendInput("Straight"), HEARTBEAT_MS);
-
-  function frame(){ drawTrail(); drawPlayers(); requestAnimationFrame(frame); }
-
-  connect(); requestAnimationFrame(frame);
-})();
-</script>
+  <script>
+    async function fetchRooms() {
+      try {
+        const res = await fetch('/rooms');
+        if (!res.ok) return [];
+        return await res.json();
+      } catch (err) {
+        console.error('Failed to fetch rooms', err);
+        return [];
+      }
+    }
+    function renderRooms(rooms) {
+      const list = document.getElementById('roomsList');
+      list.innerHTML = '';
+      if (!rooms || rooms.length === 0) {
+        const p = document.createElement('p');
+        p.textContent = 'No rooms available. Create one!';
+        list.appendChild(p);
+        return;
+      }
+      rooms.forEach(room => {
+        const div = document.createElement('div');
+        div.className = 'room';
+        const nameSpan = document.createElement('span');
+        nameSpan.textContent = 'Room ' + (room.roomId ? String(room.roomId).slice(0, 8) : '');
+        const statusSpan = document.createElement('span');
+        statusSpan.textContent = '(' + (room.status || 'Waiting') + ')';
+        const playersSpan = document.createElement('span');
+        const playersCount = room.players && Array.isArray(room.players) ? room.players.length : 0;
+        const maxPlayers = room.maxPlayers || 8;
+        playersSpan.textContent = playersCount + '/' + maxPlayers;
+        const joinBtn = document.createElement('button');
+        joinBtn.textContent = 'Join';
+        joinBtn.onclick = () => joinRoom(room.roomId);
+        div.appendChild(nameSpan);
+        div.appendChild(statusSpan);
+        div.appendChild(playersSpan);
+        div.appendChild(joinBtn);
+        list.appendChild(div);
+      });
+    }
+    async function refreshRooms() {
+      const rooms = await fetchRooms();
+      renderRooms(rooms);
+    }
+    async function createRoom() {
+      const req = { name: 'Room', maxPlayers: 8, isPrivate: false };
+      try {
+        const res = await fetch('/rooms', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(req)
+        });
+        if (res.ok) {
+          const data = await res.json();
+          // immediately join the new room
+          await joinRoom(data.roomId);
+        }
+      } catch (err) {
+        console.error('Failed to create room', err);
+      }
+    }
+    async function joinRoom(roomId) {
+      const nameInput = document.getElementById('displayName');
+      let displayName = nameInput.value.trim();
+      if (!displayName) displayName = 'Guest';
+      try {
+        const res = await fetch('/rooms/' + roomId + '/join', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ displayName })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          // Redirect to the room page with the roomId and token in the query string.
+          // Do NOT pass the wsUrl returned from the server here. The wsUrl includes
+          // type names ("RoomId", "JoinToken") in its path because Haskell's
+          // Show instance for newtypes prints them with their constructor names.
+          // That makes the URL invalid for our websocket router. Instead we only
+          // pass the raw roomId and token and let the room page compute the
+          // WebSocket URL correctly.
+          const params = new URLSearchParams();
+          params.set('roomId', roomId);
+          params.set('token', data.token);
+          window.location.href = 'room.html?' + params.toString();
+        } else {
+          console.error('Failed to join room', res.status);
+        }
+      } catch (err) {
+        console.error('Failed to join room', err);
+      }
+    }
+    document.getElementById('createRoom').addEventListener('click', createRoom);
+    document.getElementById('refreshRooms').addEventListener('click', refreshRooms);
+    document.addEventListener('DOMContentLoaded', refreshRooms);
+  </script>
 </body>
+
 </html>
