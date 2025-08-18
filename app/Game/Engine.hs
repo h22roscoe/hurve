@@ -6,6 +6,7 @@ module Game.Engine where
 
 import Data.Bits
 import Data.List (foldl')
+import qualified Data.Map as M
 import Data.Maybe (fromMaybe)
 import qualified Data.Set as S
 import Data.Word
@@ -41,7 +42,11 @@ outOfBoundsDisc :: Int -> Coord -> Coord -> (Int, Int) -> Bool
 outOfBoundsDisc r w h (cx, cy) = let maxX = round w - 1; maxY = round h - 1 in cx - r < 0 || cy - r < 0 || cx + r > maxX || cy + r > maxY
 
 sweptCenters :: (Int, Int) -> (Int, Int) -> [(Int, Int)]
-sweptCenters (x0, y0) (x1, y1) = let dx = x1 - x0; dy = y1 - y0; steps = max (abs dx) (abs dy) in if steps == 0 then [(x0, y0)] else [(x0 + (i * dx) `div` steps, y0 + (i * dy) `div` steps) | i <- [0 .. steps]]
+sweptCenters (x0, y0) (x1, y1) =
+  let dx = x1 - x0
+      dy = y1 - y0
+      steps = max (abs dx) (abs dy)
+   in if steps == 0 then [(x0, y0)] else [(x0 + (i * dx) `div` steps, y0 + (i * dy) `div` steps) | i <- [0 .. steps]]
 
 paintPath :: Int -> [(Int, Int)] -> S.Set (Int, Int)
 paintPath r = foldl' (\acc c -> S.union acc (S.fromList (vecDisc r c))) S.empty
@@ -56,47 +61,94 @@ isGapping :: Player -> Bool
 isGapping p = case gap p of Gapping _ -> True; _ -> False
 
 -- Step the world by one tick. Returns (newWorld, deltaAdd, didReset, deltaRemove, survivors)
-stepWorld :: [(PlayerId, Turn)] -> World -> (World, S.Set (Int, Int), Bool, S.Set (Int, Int), [PlayerId])
-stepWorld inputs w0@World {..} =
+stepWorld ::
+  Int ->
+  Int ->
+  [(PlayerId, Turn)] ->
+  World ->
+  (World, S.Set (Int, Int), Bool, S.Set (Int, Int), [PlayerId])
+stepWorld now noCollideUntil inputs w0@World {..} =
   let turnOf pid' = fromMaybe Straight (lookup pid' inputs)
       dtheta = \case TurnLeft -> negate turnRate; TurnRight -> turnRate; Straight -> 0
+
       advance p
         | not (alive p) = (p, pix (pos p))
         | otherwise =
             let th' = dir p + dtheta (turnOf (pid p))
-                p' = p {dir = th', pos = Pos (px (pos p) + speed * cos th') (py (pos p) + speed * sin th')}
+                p' =
+                  p
+                    { dir = th',
+                      pos =
+                        Pos
+                          (px (pos p) + speed * cos th')
+                          (py (pos p) + speed * sin th')
+                    }
              in (p', pix (pos p'))
+
       moved = map advance players
       moved' = [if alive p then advanceGap w0 p else p | (p, _) <- moved]
       movedWithCell = zip moved' (map snd moved)
-      stepAcc (!painted, !psAcc) (p', newCell) =
+
+      -- fold over players, accumulating newly-painted cells (as Map) and updated players
+      stepAcc (!paintedMap, !psAcc) (p', newCell) =
         if not (alive p')
-          then (painted, p' : psAcc)
+          then (paintedMap, p' : psAcc)
           else
             let oldCell = pixPrev (pos p') (dir p') (-speed)
                 path = sweptCenters oldCell newCell
+                ownGrace = 10 -- 10 ticks so the head doesn't crash with tail being produced
+                -- compute potential paint for THIS player THIS tick
+                newPaintKeys =
+                  if now >= noCollideUntil && not (isGapping p')
+                    then paintPath tailRadiusPx path
+                    else S.empty
+                -- convert to Map with ownership & timestamp
+                newPaintMap = M.fromSet (const (pid p', now)) newPaintKeys
+
+                -- collision check (skip during global start grace)
+                headCells = vecDisc headRadiusPx newCell
                 out = outOfBoundsDisc headRadiusPx width height newCell
-                hit = any (`S.member` trails) (vecDisc headRadiusPx newCell) || any (`S.member` painted) (vecDisc headRadiusPx newCell)
+
+                -- Helper: does a cell hit solid trail considering ownership?
+                hitsTrail cell =
+                  case M.lookup cell trails of
+                    Just (owner, tPaint)
+                      | owner == pid p' && now - tPaint <= ownGrace -> False -- ignore own recent
+                      | otherwise -> True -- collide
+                    Nothing ->
+                      -- Also check new paint laid down earlier this tick by OTHER players.
+                      case M.lookup cell paintedMap of
+                        Just (owner2, _t2) -> owner2 /= pid p'
+                        Nothing -> False
+
+                hit =
+                  now >= noCollideUntil
+                    && any hitsTrail headCells
+
                 alive' = not (out || hit)
-                shouldPaint = alive' && not (isGapping p')
-                newPaint = if shouldPaint then paintPath tailRadiusPx path else S.empty
-                painted' = S.union painted newPaint
+                painted' =
+                  if alive'
+                    then M.union paintedMap newPaintMap
+                    else paintedMap
                 pFinal = if alive' then p' else p' {alive = False}
              in (painted', pFinal : psAcc)
-      (newlyPainted, psRev) = foldl' stepAcc (S.empty, []) movedWithCell
+
+      (newlyPaintedMap, psRev) = foldl stepAcc (M.empty, []) movedWithCell
       players1 = reverse psRev
-      trails1 = S.union trails newlyPainted
+      trails1 = M.union trails newlyPaintedMap
+
       w1Base = w0 {tick = tick + 1, players = players1, trails = trails1}
       aliveP = [pid p | p <- players1, alive p]
       doReset = length aliveP <= 1
+
       (w1, deltaAdd, deltaRem) =
         if doReset
-          then (resetWorld w1Base, S.empty, trails1)
-          else (w1Base, newlyPainted, S.empty)
+          then (resetWorld w1Base, S.empty, S.fromList (M.keys trails1))
+          else (w1Base, S.fromList (M.keys newlyPaintedMap), S.empty)
    in (w1, deltaAdd, doReset, deltaRem, aliveP)
 
 resetWorld :: World -> World
-resetWorld w@World {} = w {trails = S.empty, players = respawnPlayers w}
+resetWorld w@World {} = w {trails = M.empty, players = respawnPlayers w}
 
 respawnPlayers :: World -> [Player]
 respawnPlayers World {..} =
@@ -141,6 +193,6 @@ initialWorld = do
         gapDurMin = dmin,
         gapDurMax = dmax,
         seed = seed0,
-        trails = S.empty,
+        trails = M.empty,
         players = [p1, p2]
       }

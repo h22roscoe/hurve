@@ -6,7 +6,7 @@ module Game.Types where
 
 import Data.Aeson (FromJSON (..), ToJSON (..))
 import qualified Data.Aeson as A
-import qualified Data.Set as S
+import qualified Data.Map as M
 import Data.Word
 import GHC.Generics (Generic)
 
@@ -70,7 +70,10 @@ instance ToJSON Player
 
 instance FromJSON Player
 
--- Server-side world; trails are stored as a set of cells for simplicity
+-- Server-side world
+type Cell = (Int, Int)
+
+type Trail = M.Map Cell (PlayerId, Int) -- (owner, paintedTick)
 
 data World = World
   { tick :: !Time,
@@ -85,7 +88,7 @@ data World = World
     gapDurMin :: !Int,
     gapDurMax :: !Int,
     seed :: !Word64,
-    trails :: !(S.Set (Int, Int)),
+    trails :: !Trail,
     players :: ![Player]
   }
   deriving (Show, Generic)

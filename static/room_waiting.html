@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <title>Hurve Room – Waiting</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+        :root {
+            --bg: #0b0d12;
+            --fg: #e8eef8;
+            --muted: #94a3b8;
+            --accent: #22d3ee;
+        }
+
+        html,
+        body {
+            height: 100%;
+            margin: 0;
+            background: var(--bg);
+            color: var(--fg);
+            font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, Ubuntu, Cantarell, Arial, sans-serif;
+        }
+
+        .wrap {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+        }
+
+        header,
+        footer {
+            padding: 10px 12px;
+            border-bottom: 1px solid #1f2937;
+        }
+
+        footer {
+            border-bottom: none;
+            border-top: 1px solid #1f2937;
+            color: var(--muted);
+        }
+
+        main {
+            flex: 1;
+            padding: 12px;
+        }
+
+        ul {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        li {
+            background: #0f172a;
+            padding: 8px 10px;
+            border-radius: 6px;
+        }
+
+        button {
+            padding: 6px 12px;
+            border: none;
+            border-radius: 6px;
+            background: var(--accent);
+            color: #000;
+            cursor: pointer;
+        }
+
+        .row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .grow {
+            flex: 1;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="wrap">
+        <header class="row">
+            <strong>Room – Waiting</strong>
+            <span id="phase" class="grow">Phase: Waiting</span>
+            <button id="startBtn" title="Start the round">Start</button>
+        </header>
+        <main>
+            <h3>Players</h3>
+            <ul id="players"></ul>
+        </main>
+        <footer>This view will automatically switch to the game when the round starts.</footer>
+    </div>
+    <script>
+        (function () {
+            const q = new URLSearchParams(location.search);
+            const roomId = q.get('roomId');
+            const token = q.get('token');
+            if (!roomId || !token) { alert('Missing roomId/token'); return; }
+
+            const playersUl = document.getElementById('players');
+            const phaseEl = document.getElementById('phase');
+            const startBtn = document.getElementById('startBtn');
+
+            // Helper to render players
+            function renderPlayers(list) {
+                playersUl.innerHTML = '';
+                list.forEach(({ pid, name }) => {
+                    const li = document.createElement('li');
+                    li.textContent = `P${pid}: ${name}`;
+                    playersUl.appendChild(li);
+                });
+            }
+
+            // Wire SSE for live updates
+            const sseUrl = `/rooms/${roomId}/sse`;
+            const es = new EventSource(sseUrl);
+
+            es.addEventListener('snapshot', (e) => {
+                try {
+                    const data = JSON.parse(e.data);
+                    if (data.phase) phaseEl.textContent = `Phase: ${data.phase}`;
+                    if (Array.isArray(data.clients)) {
+                        renderPlayers(data.clients.map(c => ({ pid: c.pid, name: c.name })));
+                    }
+                    // If already Playing (late join), go straight to game
+                    if (data.phase === 'Playing') goToGame();
+                } catch { }
+            });
+
+            es.addEventListener('room', (e) => {
+                try {
+                    const ev = JSON.parse(e.data);
+                    switch (ev.type) {
+                        case 'player_joined': {
+                            // append if not present
+                            const items = [...playersUl.querySelectorAll('li')].map(li => li.textContent);
+                            const tag = `P${ev.pid}: ${ev.name}`;
+                            if (!items.includes(tag)) {
+                                const li = document.createElement('li'); li.textContent = tag; playersUl.appendChild(li);
+                            }
+                            break;
+                        }
+                        case 'player_left': {
+                            [...playersUl.querySelectorAll('li')].forEach(li => {
+                                if (li.textContent.startsWith(`P${ev.pid}: `)) li.remove();
+                            });
+                            break;
+                        }
+                        case 'phase_changed': {
+                            phaseEl.textContent = `Phase: ${ev.phase}`;
+                            if (ev.phase === 'Playing') goToGame();
+                            break;
+                        }
+                        case 'score_update':
+                        case 'round_start':
+                        case 'round_over':
+                            // optional: display somewhere
+                            break;
+                    }
+                } catch { }
+            });
+
+            // Start button calls the REST endpoint to kick off countdown/playing
+            startBtn.addEventListener('click', async () => {
+                try {
+                    await fetch(`/rooms/${roomId}/start`, { method: 'POST' });
+                } catch { }
+            });
+
+            function goToGame() {
+                es.close();
+                const p = new URLSearchParams({ roomId, token });
+                location.href = 'room_game.html?' + p.toString();
+            }
+        })();
+    </script>
+</body>
+
+</html>

@@ -190,7 +190,7 @@
           const params = new URLSearchParams();
           params.set('roomId', roomId);
           params.set('token', data.token);
-          window.location.href = 'room.html?' + params.toString();
+          window.location.href = 'room_waiting.html?' + params.toString();
         } else {
           console.error('Failed to join room', res.status);
         }

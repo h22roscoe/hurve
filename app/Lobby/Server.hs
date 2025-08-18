@@ -57,7 +57,16 @@ joinRoomH LobbyState {..} rid JoinReq {..} = do
       pure JoinRes {token = tok, pid = pid, wsUrl = ws}
 
 startH :: LobbyState -> RoomId -> Handler NoContent
-startH _ _ = pure NoContent
+startH LobbyState{..} rid = do
+  rms <- liftIO $ readTVarIO lsRooms
+  case M.lookup rid rms of
+    Nothing -> throwError err404
+    Just rg -> liftIO . atomically $ do
+      w <- readTVar (rgWorld rg)
+      let deadline = tick w + 120  -- ~2s at 60Hz
+      writeTVar (rgPhase rg) (Countdown deadline)
+      writeTChan (rgEvents rg) (PhaseChanged (Countdown deadline))
+  pure NoContent
 
 deleteH :: LobbyState -> RoomId -> Handler NoContent
 deleteH LobbyState {..} rid = do
