@@ -1,14 +1,16 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RecordWildCards #-}
 
 module Game.Types where
 
 import Data.Aeson (FromJSON (..), ToJSON (..))
 import qualified Data.Aeson as A
 import qualified Data.Map as M
-import Data.Word
+import Data.Word (Word64)
 import GHC.Generics (Generic)
+import System.Random (StdGen, mkStdGen)
 
 -- Basic types
 
@@ -62,13 +64,29 @@ data Player = Player
     dir :: !Coord,
     alive :: !Bool,
     gap :: !GapState,
-    rng :: !Word64
+    rng :: !StdGen
   }
   deriving (Show, Generic)
 
-instance ToJSON Player
+instance ToJSON Player where
+  toJSON Player {..} =
+    A.object
+      [ "pid" A..= pid,
+        "pos" A..= pos,
+        "dir" A..= dir,
+        "alive" A..= alive,
+        "gap" A..= gap
+      ]
 
-instance FromJSON Player
+instance FromJSON Player where
+  parseJSON = A.withObject "Player" $ \o -> do
+    pid <- o A..: "pid"
+    pos <- o A..: "pos"
+    dir <- o A..: "dir"
+    alive <- o A..: "alive"
+    gap <- o A..: "gap"
+    let rng = mkStdGen (unPid pid)
+    pure Player {..}
 
 -- Server-side world
 type Cell = (Int, Int)

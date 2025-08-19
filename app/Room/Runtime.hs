@@ -162,8 +162,9 @@ tickLoop rg@RoomGame {..} hz = go
             writeTChan rgEvents (ScoreUpdate (M.toList sc'))
         BetweenRounds endT -> do
           w <- readTVarIO rgWorld
+          clients <- readTVarIO rgClients
           when (tick w >= endT) $ atomically $ do
-            modifyTVar' rgWorld resetWorld
+            modifyTVar' rgWorld (resetWorld $ M.keys clients)
             rn <- readTVar rgRound
             let tNow = tick w
             writeTVar rgPhase (Countdown (tNow + 180)) -- 3s at 60Hz

@@ -4,29 +4,13 @@
 
 module Game.Engine where
 
-import Data.Bits
 import Data.List (foldl')
 import qualified Data.Map as M
 import Data.Maybe (fromMaybe)
 import qualified Data.Set as S
-import Data.Word
 import Game.Types
-
--- RNG (SplitMix64)
-next64 :: Word64 -> (Word64, Word64)
-next64 s =
-  let s' = s + 0x9E3779B97F4A7C15
-      z1 = (s' `xor` (s' `shiftR` 30)) * 0xBF58476D1CE4E5B9
-      z2 = (z1 `xor` (z1 `shiftR` 27)) * 0x94D049BB133111EB
-      z3 = z2 `xor` (z2 `shiftR` 31)
-   in (z3, s')
-
-uniformR :: (Int, Int) -> Word64 -> (Int, Word64)
-uniformR (lo, hi) st =
-  let (x, st') = next64 st
-      span' = hi - lo + 1
-      n64 = lo + (fromIntegral x `mod` span')
-   in (fromIntegral n64 :: Int, st')
+import System.Random (mkStdGen, mkStdGen64, uniformR)
+import System.Random.Shuffle (shuffle')
 
 -- Geometry helpers
 pix :: Pos -> (Int, Int)
@@ -52,13 +36,28 @@ paintPath :: Int -> [(Int, Int)] -> S.Set (Int, Int)
 paintPath r = foldl' (\acc c -> S.union acc (S.fromList (vecDisc r c))) S.empty
 
 advanceGap :: World -> Player -> Player
-advanceGap World {..} p = case gap p of
-  Solid tStart | tick >= tStart -> let (dur, r1) = uniformR (gapDurMin, gapDurMax) (rng p) in p {gap = Gapping (tick + dur), rng = r1}
-  Gapping tEnd | tick >= tEnd -> let (cool, r1) = uniformR (gapCoolMin, gapCoolMax) (rng p) in p {gap = Solid (tick + cool), rng = r1}
-  _ -> p
+advanceGap World {..} p =
+  let (durT, durR) = uniformR (gapDurMin, gapDurMax) (rng p)
+      (coolT, coolR) = uniformR (gapCoolMin, gapCoolMax) (rng p)
+   in case gap p of
+        Solid tStart | tick >= tStart -> p {gap = Gapping (tick + durT), rng = durR}
+        Gapping tEnd | tick >= tEnd -> p {gap = Solid (tick + coolT), rng = coolR}
+        _ -> p
 
 isGapping :: Player -> Bool
 isGapping p = case gap p of Gapping _ -> True; _ -> False
+
+startPositions :: Double -> Double -> [(Double, Double, Double)]
+startPositions w h =
+  [ (w / 4, h / 4, 0),
+    (3 * w / 4, h / 4, pi),
+    (w / 4, 3 * h / 4, pi / 2),
+    (3 * w / 4, 3 * h / 4, 3 * pi / 2),
+    (w / 2, h / 4, pi / 2),
+    (w / 2, 3 * h / 4, 3 * pi / 2),
+    (w / 4, h / 2, 0),
+    (3 * w / 4, h / 2, pi)
+  ]
 
 -- Step the world by one tick. Returns (newWorld, deltaAdd, didReset, deltaRemove, survivors)
 stepWorld ::
@@ -143,26 +142,32 @@ stepWorld now noCollideUntil inputs w0@World {..} =
 
       (w1, deltaAdd, deltaRem) =
         if doReset
-          then (resetWorld w1Base, S.empty, S.fromList (M.keys trails1))
+          then (resetWorld (map pid players1) w1Base, S.empty, S.fromList (M.keys trails1))
           else (w1Base, S.fromList (M.keys newlyPaintedMap), S.empty)
    in (w1, deltaAdd, doReset, deltaRem, aliveP)
 
-resetWorld :: World -> World
-resetWorld w@World {} = w {trails = M.empty, players = respawnPlayers w}
-
-respawnPlayers :: World -> [Player]
-respawnPlayers World {..} =
-  let spots =
-        cycle
-          [ (width * 0.25, height * 0.5, 0),
-            (width * 0.75, height * 0.5, pi),
-            (width * 0.5, height * 0.25, pi / 2),
-            (width * 0.5, height * 0.75, -(pi / 2))
-          ]
-      reinit p (x, y, th) =
-        let (cool, r1) = uniformR (gapCoolMin, gapCoolMax) (seed `xor` fromIntegral (unPid (pid p)))
-         in p {pos = Pos x y, dir = th, alive = True, gap = Solid (tick + cool), rng = r1}
-   in zipWith reinit players spots
+resetWorld ::  [PlayerId] -> World -> World
+resetWorld pids w@World {..}  = do
+  let basePositions = startPositions width height
+  let shuffledPositions = shuffle' basePositions (length basePositions) (mkStdGen64 seed)
+  let chosen = take (length pids) shuffledPositions
+      ps = zipWith mkPlayer pids chosen
+  w
+    { tick = 0,
+      trails = M.empty,
+      players = ps
+    }
+  where
+    mkPlayer pid (x, y, theta) =
+      let (cool, rng') = uniformR (gapCoolMin, gapCoolMax) (mkStdGen (unPid pid))
+       in Player
+            { pid = pid,
+              pos = Pos x y,
+              dir = theta,
+              gap = Solid (tick + cool),
+              alive = True,
+              rng = rng'
+            }
 
 initialWorld :: IO World
 initialWorld = do
@@ -177,8 +182,6 @@ initialWorld = do
       dmin = 18
       dmax = 45
       seed0 = 0xDEADBEEFCAFEBABE
-      p1 = Player (PlayerId 1) (Pos (fromIntegral (w `div` 4)) (fromIntegral (h `div` 2))) 0 True (Solid 120) (seed0 `xor` 0xA5A5)
-      p2 = Player (PlayerId 2) (Pos (fromIntegral (w * 3 `div` 4)) (fromIntegral (h `div` 2))) pi True (Solid 200) (seed0 `xor` 0x5A5A)
   pure
     World
       { tick = 0,
@@ -194,5 +197,5 @@ initialWorld = do
         gapDurMax = dmax,
         seed = seed0,
         trails = M.empty,
-        players = [p1, p2]
+        players = []
       }
