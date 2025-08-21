@@ -13,6 +13,7 @@ import qualified Data.ByteString.Lazy as LBS
 import qualified Data.Map.Strict as M
 import Data.Text (Text)
 import qualified Data.UUID as UUID
+import Data.Unique (hashUnique, newUnique)
 import Game.Engine
 import Game.Types
 import Servant.API
@@ -40,7 +41,8 @@ type BL = LBS.ByteString
 -- RoomGame holds game state and plumbing
 
 data RoomGame = RoomGame
-  { rgWorld :: TVar World,
+  { rgId :: Int,
+    rgWorld :: TVar World,
     rgPhase :: TVar Phase,
     rgRound :: TVar Int,
     rgRoundStart :: TVar Time,
@@ -86,6 +88,7 @@ newLobbyState = atomically $ LobbyState <$> newTVar M.empty <*> newTVar M.empty
 startRoomGame :: IO RoomGame
 startRoomGame = do
   w <- initialWorld
+  rgId <- hashUnique <$> newUnique
   atomically $ do
     rgWorld <- newTVar w
     rgPhase <- newTVar Waiting
@@ -95,7 +98,7 @@ startRoomGame = do
     rgInputs <- newTChan
     rgClients <- newTVar M.empty
     rgEvents <- newTChan
-    pure RoomGame {rgWorld, rgPhase, rgRound, rgRoundStart, rgScore, rgInputs, rgClients, rgEvents, rgTickThr = unsafeCoerce ()}
+    pure RoomGame {rgId, rgWorld, rgPhase, rgRound, rgRoundStart, rgScore, rgInputs, rgClients, rgEvents, rgTickThr = unsafeCoerce ()}
 
 launchTick :: RoomGame -> Int -> IO RoomGame
 launchTick rg hz = do

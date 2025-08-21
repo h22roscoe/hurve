@@ -106,6 +106,24 @@
             const phaseEl = document.getElementById('phase');
             const startBtn = document.getElementById('startBtn');
 
+            let WS_URL;
+            // Prefer constructing the WebSocket URL from the roomId and token. The
+            // wsUrlParam may contain type names ("RoomId", "JoinToken") when
+            // returned from the Haskell server, which makes the path invalid. Only
+            // fall back to the wsUrlParam if roomId or token are missing.
+            if (roomId && token) {
+                const protocol = location.protocol === 'https:' ? 'wss://' : 'ws://';
+                WS_URL = protocol + location.host + '/ws/' + roomId + '/' + token;
+            } else if (wsUrlParam) {
+                WS_URL = wsUrlParam;
+            } else {
+                alert('Missing room or token in URL');
+                return;
+            }
+            
+            let socket = null;
+            connect();
+
             // Helper to render players
             function renderPlayers(list) {
                 playersUl.innerHTML = '';
@@ -176,6 +194,18 @@
                 es.close();
                 const p = new URLSearchParams({ roomId, token });
                 location.href = 'room_game.html?' + p.toString();
+            }
+
+            function connect() {
+                if (socket) {
+                try { socket.close(); } catch { };
+                }
+                socket = new WebSocket(WS_URL);
+
+                socket.onclose = () => {
+                    // Attempt reconnect after 1 second
+                    setTimeout(connect, 1000);
+                };
             }
         })();
     </script>
