@@ -18,6 +18,7 @@ import Lobby.API
 import Network.Wai.Middleware.Cors (simpleCors)
 import Room.Runtime
 import Servant
+import Data.Unique (hashUnique, newUnique)
 
 lobbyApi :: Proxy LobbyAPI
 lobbyApi = Proxy
@@ -51,7 +52,7 @@ joinRoomH LobbyState {..} rid JoinReq {..} = do
     Nothing -> throwError err404
     Just _ -> do
       tok <- JoinToken <$> liftIO nextRandom
-      let pid = 1 -- naive demo: client sends its pid later; real impl allocates free id here
+      pid <- hashUnique <$> liftIO newUnique
       liftIO . atomically $ modifyTVar' lsTokens (M.insert tok (rid, PlayerId pid, displayName))
       let ws = T.pack ("ws://localhost:9160/ws/" <> show rid <> "/" <> show tok)
       pure JoinRes {token = tok, pid = pid, wsUrl = ws}

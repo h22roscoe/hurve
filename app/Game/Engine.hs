@@ -146,8 +146,8 @@ stepWorld now noCollideUntil inputs w0@World {..} =
           else (w1Base, S.fromList (M.keys newlyPaintedMap), S.empty)
    in (w1, deltaAdd, doReset, deltaRem, aliveP)
 
-resetWorld ::  [PlayerId] -> World -> World
-resetWorld pids w@World {..}  = do
+resetWorld :: [PlayerId] -> World -> World
+resetWorld pids w@World {..} = do
   let basePositions = startPositions width height
   let shuffledPositions = shuffle' basePositions (length basePositions) (mkStdGen64 seed)
   let chosen = take (length pids) shuffledPositions
