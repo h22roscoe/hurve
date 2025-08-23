@@ -219,5 +219,5 @@ worldObj w =
       "headRadiusPx" A..= headRadiusPx w,
       "tailRadiusPx" A..= tailRadiusPx w,
       "players" A..= players w,
-      "trails" A..= map (\(x, y) -> A.toJSON [x, y]) (M.keys (trails w))
+      "trails" A..= map (\(cell, (pid, _)) -> A.toJSON [fst cell, snd cell, unPid pid]) (M.toList (trails w))
     ]
