@@ -99,16 +99,29 @@
   </div>
   <script>
     (function () {
-      // Parse query parameters for roomId, token and wsUrl
+      // -----------------------------
+      // Constants & DOM
+      // -----------------------------
+      const HEARTBEAT_MS = 500;
+      const SCALE = 1;
+
+      const canvas = document.getElementById('canvas');
+      const ctx = canvas.getContext('2d', { alpha: false, desynchronized: true });
+      const elRound = document.getElementById('round');
+      const elPhase = document.getElementById('phase');
+      const scoreboardDiv = document.getElementById('scoreboard');
+
+      // Keep 1px “pixel” look for Path2D rects
+      ctx.imageSmoothingEnabled = false;
+
+      // -----------------------------
+      // URL → WS URL resolution
+      // -----------------------------
       const params = new URLSearchParams(window.location.search);
       const wsUrlParam = params.get('wsUrl');
       const roomId = params.get('roomId');
       const token = params.get('token');
       let WS_URL;
-      // Prefer constructing the WebSocket URL from the roomId and token. The
-      // wsUrlParam may contain type names ("RoomId", "JoinToken") when
-      // returned from the Haskell server, which makes the path invalid. Only
-      // fall back to the wsUrlParam if roomId or token are missing.
       if (roomId && token) {
         const protocol = location.protocol === 'https:' ? 'wss://' : 'ws://';
         WS_URL = protocol + location.host + '/ws/' + roomId + '/' + token;
@@ -118,98 +131,98 @@
         alert('Missing room or token in URL');
         return;
       }
-      const HEARTBEAT_MS = 500;
-      const SCALE = 1;
-      const canvas = document.getElementById('canvas');
-      const ctx = canvas.getContext('2d', { alpha: false, desynchronized: true });
-      const elRound = document.getElementById('round');
-      const elPhase = document.getElementById('phase');
-      const scoreboardDiv = document.getElementById('scoreboard');
 
-      let socket = null;
-      let myPid = null;
-      let seq = 1;
-      let currentTurn = 'Straight';
-      let lastSentTurn = 'Straight';
-      let world = null;
-      let trailImg = null;
-      let trailDirty = false;
-      let lastPhase = null;
-      let lastRound = null;
-
-      function clearCanvasHard() {
-        // wipe the visible canvas
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        // rebuild a fresh trail image buffer (fully opaque alpha, black color)
-        trailImg = ctx.createImageData(canvas.width, canvas.height);
-        for (let i = 3; i < trailImg.data.length; i += 4) trailImg.data[i] = 255;
-        trailDirty = true;
-      }
-      function colorFor(pid) {
+      // -----------------------------
+      // Functional helpers
+      // -----------------------------
+      const colorFor = (pid) => {
         const colors = ['#22d3ee', '#a78bfa', '#34d399', '#fbbf24', '#f472b6', '#60a5fa', '#f87171'];
         return colors[pid % colors.length];
-      }
-      function applyWorldResize() {
+      };
+
+      const byPid = (cells) =>
+        cells.reduce((acc, c) => {
+          const x = Array.isArray(c) ? c[0] : (c.x ?? c.t0 ?? 0);
+          const y = Array.isArray(c) ? c[1] : (c.y ?? c.t1 ?? 0);
+          const pid = Array.isArray(c) ? c[2] : (c.pid ?? c.t2 ?? 0);
+          (acc[pid] || (acc[pid] = [])).push({ x, y, pid });
+          return acc;
+        }, {});
+
+      // Builds fresh paths for a full trails snapshot
+      const buildPathsFromTrails = (trails) => {
+        const groups = byPid(trails || []);
+        const paths = new Map();
+        for (const pidStr of Object.keys(groups)) {
+          const pid = Number(pidStr);
+          const p = new Path2D();
+          for (const { x, y } of groups[pid]) {
+            p.rect(Math.round(x * SCALE), Math.round(y * SCALE), 1, 1);
+          }
+          paths.set(pid, p);
+        }
+        return paths;
+      };
+
+      // Appends cells to an existing paths map (mutates Path2D objects; returns same Map for ergonomic "functional-ish" use)
+      const appendCellsToPaths = (paths, cells) => {
+        if (!cells || !cells.length) return paths;
+        const groups = byPid(cells);
+        for (const pidStr of Object.keys(groups)) {
+          const pid = Number(pidStr);
+          const existing = paths.get(pid) || new Path2D();
+          for (const { x, y } of groups[pid]) {
+            existing.rect(Math.round(x * SCALE), Math.round(y * SCALE), 1, 1);
+          }
+          paths.set(pid, existing);
+        }
+        return paths;
+      };
+
+      const applyWorldResize = (world) => {
         if (!world) return;
         const w = Math.round(world.width * SCALE);
         const h = Math.round(world.height * SCALE);
         if (canvas.width !== w || canvas.height !== h) {
           canvas.width = w;
           canvas.height = h;
-          trailImg = ctx.createImageData(w, h);
-          // Make the background opaque by filling alpha channel
-          for (let i = 3; i < trailImg.data.length; i += 4) {
-            trailImg.data[i] = 255;
+          // No need to rebuild paths here; caller decides whether to rebuild/clear
+        }
+      };
+
+      const clearCanvasHard = () => {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+      };
+
+      const drawPaths = (paths, players) => {
+        // If players provided, draw in that order (stable color layering); otherwise iterate paths map.
+        if (Array.isArray(players)) {
+          for (const p of players) {
+            const path = paths.get(p.pid);
+            if (!path) continue;
+            ctx.fillStyle = colorFor(p.pid);
+            ctx.fill(path);
           }
-          trailDirty = true;
+        } else {
+          for (const [pid, path] of paths) {
+            ctx.fillStyle = colorFor(pid);
+            ctx.fill(path);
+          }
         }
-      }
-      function setPixel(img, x, y, colorHex) {
-        if (!img) return;
-        if (x < 0 || y < 0 || x >= img.width || y >= img.height) return;
-        const idx = (y * img.width + x) * 4;
-        const d = img.data;
-        // convert hex colour (#rrggbb) to rgb
-        const r = parseInt(colorHex.slice(1, 3), 16);
-        const g = parseInt(colorHex.slice(3, 5), 16);
-        const b = parseInt(colorHex.slice(5, 7), 16);
-        d[idx] = r;
-        d[idx + 1] = g;
-        d[idx + 2] = b;
-        d[idx + 3] = 255;
-      }
-      function rebuildTrail(trails) {
-        if (!trailImg) return;
-        // Clear image: reset color and alpha (alpha remains 255 for all)
-        trailImg.data.fill(0);
-        for (let i = 3; i < trailImg.data.length; i += 4) {
-          trailImg.data[i] = 255;
-        }
-        for (const cell of trails) {
-          const x = Array.isArray(cell) ? cell[0] : cell.x ?? cell.t0 ?? 0;
-          const y = Array.isArray(cell) ? cell[1] : cell.y ?? cell.t1 ?? 0;
-          const pid = Array.isArray(cell) ? cell[2] : cell.pid ?? cell.t2 ?? myPid ?? 0;
-          const col = colorFor(pid);
-          setPixel(trailImg, x, y, col);
-        }
-        trailDirty = true;
-      }
-      function drawTrail() {
-        if (trailImg && trailDirty) {
-          ctx.putImageData(trailImg, 0, 0);
-          trailDirty = false;
-        }
-      }
-      function drawPlayers() {
+      };
+
+      const drawPlayers = (world) => {
         if (!world || !world.players) return;
         for (const p of world.players) {
           const x = Number(p.pos.px) * SCALE;
           const y = Number(p.pos.py) * SCALE;
           const r = (world.headRadiusPx || 2) * SCALE;
+
           ctx.beginPath();
           ctx.arc(x, y, r, 0, Math.PI * 2);
           ctx.fillStyle = p.alive ? colorFor(p.pid) : 'rgba(120,120,120,0.7)';
           ctx.fill();
+
           const theta = Number(p.dir);
           ctx.beginPath();
           ctx.moveTo(x, y);
@@ -218,42 +231,134 @@
           ctx.lineWidth = 1;
           ctx.stroke();
         }
-      }
-      function updateScoreboard(scoreList) {
+      };
+
+      const updateScoreboard = (scoreList) => {
         scoreboardDiv.innerHTML = '';
         if (!Array.isArray(scoreList)) return;
-        scoreList.forEach(entry => {
-          const pid = entry[0];
-          const pts = entry[1];
+        for (const [pid, pts] of scoreList) {
           const span = document.createElement('span');
           span.className = 'player';
           const dot = document.createElement('span');
           dot.className = 'dot';
           dot.style.background = colorFor(pid);
           span.appendChild(dot);
-          const text = document.createTextNode('P' + pid + ': ' + pts);
-          span.appendChild(text);
+          span.appendChild(document.createTextNode('P' + pid + ': ' + pts));
           scoreboardDiv.appendChild(span);
+        }
+      };
+
+      const updateStatus = (phase, round) => {
+        if (phase != null) elPhase.textContent = phase;
+        if (round != null) elRound.textContent = round;
+      };
+
+      // -----------------------------
+      // State & reducer-like setter
+      // -----------------------------
+      const initialState = Object.freeze({
+        socket: null,
+        myPid: null,
+        seq: 1,
+        currentTurn: 'Straight',
+        lastSentTurn: 'Straight',
+        world: null,
+        pathsByPid: new Map(),
+        lastPhase: null,
+        lastRound: null,
+      });
+
+      let state = initialState;
+
+      const setState = (update) => {
+        // update can be partial object or (prev) => newPartial
+        const patch = typeof update === 'function' ? update(state) : update;
+        state = { ...state, ...patch };
+        return state;
+      };
+
+      // -----------------------------
+      // WebSocket wiring
+      // -----------------------------
+      const sendInput = (turn) => {
+        const { socket, myPid, seq } = state;
+        if (!socket || socket.readyState !== 1 || myPid == null) return;
+        const payload = ['input', seq, myPid, turn];
+        try {
+          socket.send(JSON.stringify(payload));
+          setState({ seq: seq + 1 });
+        } catch { }
+      };
+
+      const handleWelcome = (pid, w) => {
+        setState({ myPid: pid, world: w });
+        applyWorldResize(w);
+        // Full rebuild from world.trails (per-player colouring assumed)
+        const paths = buildPathsFromTrails(w && w.trails);
+        clearCanvasHard();
+        setState({ pathsByPid: paths, lastPhase: null, lastRound: null });
+        updateScoreboard([]);
+        updateStatus('', '');
+      };
+
+      const handleState = (obj) => {
+        const phase = obj.phase;
+        const round = obj.round;
+
+        const phaseJustStartedPlaying = (phase === 'Playing' && state.lastPhase !== 'Playing');
+        const roundChanged = (typeof round === 'number' && round !== state.lastRound);
+
+        // World updates may contain a fresh snapshot of trails or just deltas.
+        let worldNext = state.world;
+        if (obj.world) {
+          worldNext = obj.world;
+          applyWorldResize(worldNext);
+        }
+
+        let pathsNext = state.pathsByPid;
+
+        if (phaseJustStartedPlaying || roundChanged) {
+          // Reset visuals on round/phase start
+          clearCanvasHard();
+          pathsNext = new Map();
+        }
+
+        if (obj.world && Array.isArray(obj.world.trails)) {
+          // Fresh full snapshot provided: rebuild
+          pathsNext = buildPathsFromTrails(obj.world.trails);
+        } else if (Array.isArray(obj.deltaTrails) && obj.deltaTrails.length) {
+          // Optional incremental form if your server sends it
+          pathsNext = appendCellsToPaths(pathsNext, obj.deltaTrails);
+        }
+
+        if (obj.score) updateScoreboard(obj.score);
+        updateStatus(phase, round);
+
+        setState({
+          world: worldNext,
+          pathsByPid: pathsNext,
+          lastPhase: phase,
+          lastRound: round,
         });
-      }
-      function updateStatus(phase, round) {
-        if (phase !== undefined && phase !== null) {
-          elPhase.textContent = phase;
+
+        // Send current turn for next tick
+        sendInput(state.currentTurn);
+      };
+
+      const connect = () => {
+        // Close previous socket if any
+        if (state.socket) {
+          try { state.socket.close(); } catch { }
         }
-        if (round !== undefined && round !== null) {
-          elRound.textContent = round;
-        }
-      }
-      function connect() {
-        if (socket) {
-          try { socket.close(); } catch { };
-        }
-        socket = new WebSocket(WS_URL);
+        const socket = new WebSocket(WS_URL);
+        setState({ socket });
+
         socket.onopen = () => {
           // Kick off with a straight input to get welcome/ack
           sendInput('Straight');
-          lastSentTurn = 'Straight';
+          setState({ lastSentTurn: 'Straight' });
         };
+
         socket.onmessage = (ev) => {
           let msg;
           try { msg = JSON.parse(ev.data); } catch { return; }
@@ -261,101 +366,74 @@
           const [t, ...rest] = msg;
           if (t === 'welcome') {
             const [pid, w] = rest;
-            myPid = pid;
-            world = w;
-            applyWorldResize();
-            rebuildTrail((world && world.trails) || []);
-            updateScoreboard([]);
-            updateStatus('', '');
+            handleWelcome(pid, w);
           } else if (t === 'state') {
-            const [tick, obj] = rest;
-
-            // Phase / round bookkeeping
-            const phase = obj.phase;
-            const round = obj.round;
-
-            // Detect round (re)start: when phase becomes Playing OR round increments
-            const phaseJustStartedPlaying = (phase === 'Playing' && lastPhase !== 'Playing');
-            const roundChanged = (typeof round === 'number' && round !== lastRound);
-
-            if (phaseJustStartedPlaying || roundChanged) {
-              applyWorldResize();   // ensure the buffer matches current world dims
-              clearCanvasHard();    // hard wipe canvas + trail buffer
-            }
-
-            // World update
-            if (obj.world) {
-              world = obj.world;
-              applyWorldResize();                 // (safe to call again)
-              if (Array.isArray(world.trails)) {  // empty [] will clear the buffer
-                rebuildTrail(world.trails);
-              } else if (phaseJustStartedPlaying || roundChanged) {
-                // if server omitted trails, be sure we still cleared
-                clearCanvasHard();
-              }
-            }
-
-            if (obj.score) updateScoreboard(obj.score);
-            updateStatus(phase, round);
-
-            lastPhase = phase;
-            lastRound = round;
-
-            // Send current turn to server for next tick
-            sendInput(currentTurn);
+            const [_tick, obj] = rest;
+            handleState(obj || {});
           }
         };
+
         socket.onclose = () => {
           // Attempt reconnect after 1 second
           setTimeout(connect, 1000);
         };
-      }
-      function sendInput(turn) {
-        if (!socket || socket.readyState !== 1 || myPid == null) return;
-        const payload = ['input', seq, myPid, turn];
-        try {
-          socket.send(JSON.stringify(payload));
-          seq++;
-        } catch { }
-      }
-      // Keyboard handling
+      };
+
+      // -----------------------------
+      // Input handling (functional-ish)
+      // -----------------------------
       const keys = new Set();
+      const computeTurn = (ks) => {
+        const left = ks.has('ArrowLeft') || ks.has('KeyA');
+        const right = ks.has('ArrowRight') || ks.has('KeyD');
+        return left && !right ? 'Left' : right && !left ? 'Right' : 'Straight';
+      };
+
+      const maybeSendTurn = () => {
+        const { currentTurn, lastSentTurn } = state;
+        if (currentTurn !== lastSentTurn) {
+          sendInput(currentTurn);
+          setState({ lastSentTurn: currentTurn });
+        }
+      };
+
       addEventListener('keydown', (e) => {
         if (['ArrowLeft', 'ArrowRight', 'KeyA', 'KeyD'].includes(e.code)) e.preventDefault();
         if (!keys.has(e.code)) {
           keys.add(e.code);
-          updateTurn();
-          maybeSend();
+          const next = computeTurn(keys);
+          setState({ currentTurn: next });
+          maybeSendTurn();
         }
       });
+
       addEventListener('keyup', (e) => {
         if (keys.has(e.code)) {
           keys.delete(e.code);
-          updateTurn();
-          maybeSend();
+          const next = computeTurn(keys);
+          setState({ currentTurn: next });
+          maybeSendTurn();
         }
       });
-      function updateTurn() {
-        const left = keys.has('ArrowLeft') || keys.has('KeyA');
-        const right = keys.has('ArrowRight') || keys.has('KeyD');
-        currentTurn = left && !right ? 'Left' : right && !left ? 'Right' : 'Straight';
-      }
-      function maybeSend() {
-        if (currentTurn !== lastSentTurn) {
-          sendInput(currentTurn);
-          lastSentTurn = currentTurn;
-        }
-      }
-      // Heartbeat to keep connection alive
+
+      // -----------------------------
+      // Render loop
+      // -----------------------------
+      const frame = () => {
+        // Trail (paths) first, then players on top
+        const { pathsByPid, world } = state;
+        drawPaths(pathsByPid, world?.players);
+        drawPlayers(world);
+        requestAnimationFrame(frame);
+      };
+
+      // -----------------------------
+      // Heartbeat & boot
+      // -----------------------------
       setInterval(() => {
         sendInput('Straight');
       }, HEARTBEAT_MS);
-      // Render loop
-      function frame() {
-        drawTrail();
-        drawPlayers();
-        requestAnimationFrame(frame);
-      }
+
       connect();
       requestAnimationFrame(frame);
     })();
