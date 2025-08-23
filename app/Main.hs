@@ -16,7 +16,7 @@ import Network.Wai.Handler.Warp (run)
 import Network.Wai.Handler.WebSockets (websocketsOr)
 import qualified Network.WebSockets as WS
 import Room.Runtime
-import Web.SSE (roomSSEApp)
+import Web.SSE (roomSSEApp, lobbySSEApp)
 import Web.WS (roomWebSocket)
 
 main :: IO ()
@@ -34,6 +34,7 @@ withSSE st rest req send = do
   let p = pathInfo req
   case p of
     ["rooms", _ridTxt, "sse"] -> roomSSEApp st req send
+    ["rooms", "sse"]         -> lobbySSEApp st req send
     _ -> rest req send
 
 wsRouter :: LobbyState -> WS.ServerApp
@@ -53,7 +54,7 @@ wsRouter st pending = do
           rms <- readTVarIO (lsRooms st)
           case M.lookup rid rms of
             Nothing -> WS.rejectRequest pending "room not running"
-            Just rt -> roomWebSocket rt pid name pending
+            Just rm -> roomWebSocket st rm pid name pending
 
 parseWsTarget :: ByteString -> Either Text (RoomId, JoinToken)
 parseWsTarget rawPath =

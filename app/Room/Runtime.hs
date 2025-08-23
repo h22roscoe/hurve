@@ -13,7 +13,6 @@ import qualified Data.ByteString.Lazy as LBS
 import qualified Data.Map.Strict as M
 import Data.Text (Text)
 import qualified Data.UUID as UUID
-import Data.Unique (hashUnique, newUnique)
 import Game.Engine
 import Game.Types
 import Servant.API
@@ -41,7 +40,7 @@ type BL = LBS.ByteString
 -- RoomGame holds game state and plumbing
 
 data RoomGame = RoomGame
-  { rgId :: Int,
+  { rgId :: RoomId,
     rgWorld :: TVar World,
     rgPhase :: TVar Phase,
     rgRound :: TVar Int,
@@ -77,18 +76,22 @@ instance FromHttpApiData JoinToken where
 instance ToHttpApiData JoinToken where
   toUrlPiece (JoinToken u) = UUID.toText u
 
+data LobbyEvent
+  = LobbyRoomUpsert {leRoom :: RoomId, lePlayers :: Int, lePhase :: Phase}
+  | LobbyRoomRemoved {leRoom :: RoomId}
+
 data LobbyState = LobbyState
   { lsRooms :: TVar (M.Map RoomId RoomGame),
-    lsTokens :: TVar (M.Map JoinToken (RoomId, PlayerId, Text))
+    lsTokens :: TVar (M.Map JoinToken (RoomId, PlayerId, Text)),
+    lsLobbyEvents :: TChan LobbyEvent
   }
 
 newLobbyState :: IO LobbyState
-newLobbyState = atomically $ LobbyState <$> newTVar M.empty <*> newTVar M.empty
+newLobbyState = atomically $ LobbyState <$> newTVar M.empty <*> newTVar M.empty <*> newTChan
 
-startRoomGame :: IO RoomGame
-startRoomGame = do
+startRoomGame :: RoomId -> IO RoomGame
+startRoomGame rid = do
   w <- initialWorld
-  rgId <- hashUnique <$> newUnique
   atomically $ do
     rgWorld <- newTVar w
     rgPhase <- newTVar Waiting
@@ -98,7 +101,7 @@ startRoomGame = do
     rgInputs <- newTChan
     rgClients <- newTVar M.empty
     rgEvents <- newTChan
-    pure RoomGame {rgId, rgWorld, rgPhase, rgRound, rgRoundStart, rgScore, rgInputs, rgClients, rgEvents, rgTickThr = unsafeCoerce ()}
+    pure RoomGame {rgId = rid, rgWorld, rgPhase, rgRound, rgRoundStart, rgScore, rgInputs, rgClients, rgEvents, rgTickThr = unsafeCoerce ()}
 
 launchTick :: RoomGame -> Int -> IO RoomGame
 launchTick rg hz = do
@@ -109,15 +112,21 @@ stopRoom :: RoomGame -> IO ()
 stopRoom RoomGame {..} = cancel rgTickThr
 
 -- Attach/detach clients: EMIT EVENTS
-addClient :: RoomGame -> Client -> STM ()
-addClient RoomGame {..} c = do
+addClient :: LobbyState -> RoomGame -> Client -> STM ()
+addClient st RoomGame {..} c = do
   modifyTVar' rgClients (M.insert (cPid c) c)
   writeTChan rgEvents (PlayerJoined (cPid c) (cName c))
+  cs <- readTVar rgClients
+  ph <- readTVar rgPhase
+  writeTChan (lsLobbyEvents st) (LobbyRoomUpsert rgId (M.size cs) ph)
 
-removeClient :: RoomGame -> PlayerId -> STM ()
-removeClient RoomGame {..} p = do
+removeClient :: LobbyState -> RoomGame -> PlayerId -> STM ()
+removeClient st RoomGame {..} p = do
   modifyTVar' rgClients (M.delete p)
   writeTChan rgEvents (PlayerLeft p)
+  cs <- readTVar rgClients
+  ph <- readTVar rgPhase
+  writeTChan (lsLobbyEvents st) (LobbyRoomUpsert rgId (M.size cs) ph)
 
 -- Utility: current clients snapshot
 clientsSnapshot :: RoomGame -> STM [(PlayerId, Text)]

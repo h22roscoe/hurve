@@ -15,15 +15,15 @@ import qualified Network.WebSockets as WS
 import Room.Runtime
 
 -- Attach a single socket to a room, registering the player and streaming states.
-roomWebSocket :: RoomGame -> PlayerId -> Text -> WS.ServerApp
-roomWebSocket rg pid name pending = do
+roomWebSocket :: LobbyState -> RoomGame -> PlayerId -> Text -> WS.ServerApp
+roomWebSocket st rg pid name pending = do
   conn <- WS.acceptRequest pending
   WS.withPingThread conn 25 (pure ()) $ do
     -- register client
     outQ <- newTBQueueIO 128
     aliveVar <- newTVarIO True
     let client = Client pid name outQ aliveVar
-    atomically $ addClient rg client
+    atomically $ addClient st rg client
     -- welcome
     w0 <- readTVarIO (rgWorld rg)
     WS.sendTextData conn (A.encode [A.String "welcome", A.toJSON (unPid pid), worldObj w0])
@@ -44,4 +44,4 @@ roomWebSocket rg pid name pending = do
           WS.sendTextData conn bs
     finally
       (race_ reader writer)
-      (atomically (removeClient rg pid))
+      (atomically (removeClient st rg pid))
