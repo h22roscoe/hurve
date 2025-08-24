@@ -86,7 +86,7 @@
         <header class="row">
             <strong>Room – Waiting</strong>
             <span id="phase" class="grow">Phase: Waiting</span>
-            <button id="startBtn" title="Start the round">Start</button>
+            <button id="readyBtn" title="Ready">Ready</button>
         </header>
         <main>
             <h3>Players</h3>
@@ -104,7 +104,9 @@
 
             const playersUl = document.getElementById('players');
             const phaseEl = document.getElementById('phase');
-            const startBtn = document.getElementById('startBtn');
+            const readyBtn = document.getElementById('readyBtn');
+
+            let readyState = false;
 
             let WS_URL;
             // Prefer constructing the WebSocket URL from the roomId and token. The
@@ -120,16 +122,18 @@
                 alert('Missing room or token in URL');
                 return;
             }
-            
+
             let socket = null;
             connect();
 
             // Helper to render players
             function renderPlayers(list) {
                 playersUl.innerHTML = '';
-                list.forEach(({ pid, name }) => {
+                list.forEach(({ pid, name, ready }) => {
                     const li = document.createElement('li');
-                    li.textContent = `P${pid}: ${name}`;
+                    const tag = `<span id="player-${pid}">${name}</span>`;
+                    const emoji = `<span class="readiness">${!!ready ? "🚀" : "⏳"}</span>`;
+                    li.innerHTML = tag + emoji;
                     playersUl.appendChild(li);
                 });
             }
@@ -143,7 +147,7 @@
                     const data = JSON.parse(e.data);
                     if (data.phase) phaseEl.textContent = `Phase: ${data.phase}`;
                     if (Array.isArray(data.clients)) {
-                        renderPlayers(data.clients.map(c => ({ pid: c.pid, name: c.name })));
+                        renderPlayers(data.clients.map(c => ({ pid: c.pid, name: c.name, ready: c.ready })));
                     }
                     // If already Playing (late join), go straight to game
                     if (data.phase === 'Playing') goToGame();
@@ -151,43 +155,55 @@
             });
 
             es.addEventListener('room', (e) => {
-                try {
-                    const ev = JSON.parse(e.data);
-                    switch (ev.type) {
-                        case 'player_joined': {
-                            // append if not present
-                            const items = [...playersUl.querySelectorAll('li')].map(li => li.textContent);
-                            const tag = `P${ev.pid}: ${ev.name}`;
-                            if (!items.includes(tag)) {
-                                const li = document.createElement('li'); li.textContent = tag; playersUl.appendChild(li);
-                            }
-                            break;
+                const ev = JSON.parse(e.data);
+                switch (ev.type) {
+                    case 'player_joined': {
+                        // append if not present
+                        const exists = !!playersUl.querySelector(`#player-${ev.pid}`);
+                        if (!exists) {
+                            const tag = `<span id="player-${ev.pid}">${ev.name}</span>`;
+                            const emoji = `<span class="readiness">⏳</span>`;
+                            const li = document.createElement('li');
+                            li.innerHTML = tag + emoji;
+                            playersUl.appendChild(li);
                         }
-                        case 'player_left': {
-                            [...playersUl.querySelectorAll('li')].forEach(li => {
-                                if (li.textContent.startsWith(`P${ev.pid}: `)) li.remove();
-                            });
-                            break;
-                        }
-                        case 'phase_changed': {
-                            phaseEl.textContent = `Phase: ${ev.phase}`;
-                            if (ev.phase === 'Playing') goToGame();
-                            break;
-                        }
-                        case 'score_update':
-                        case 'round_start':
-                        case 'round_over':
-                            // optional: display somewhere
-                            break;
+                        break;
                     }
-                } catch { }
+                    case 'player_left': {
+                        const existingLi = playersUl.querySelector(`#player-${ev.pid}`).parentElement;
+                        if (!existingLi) break;
+                        existingLi.remove();
+                        break;
+                    }
+                    case 'phase_changed': {
+                        phaseEl.textContent = `Phase: ${ev.phase}`;
+                        if (ev.phase === 'Playing') goToGame();
+                        break;
+                    }
+                    case 'ready_changed': {
+                        const existingLi = playersUl.querySelector(`#player-${ev.pid}`).parentElement;
+                        if (!existingLi) break;
+
+                        const emoji = !!ev.ready ? "🚀" : "⏳";
+                        const existingReadiness = existingLi.querySelector(".readiness");
+                        if (!existingReadiness) break;
+                        existingReadiness.textContent = emoji;
+                        break;
+                    }
+                    case 'score_update':
+                    case 'round_start':
+                    case 'round_over':
+                        break;
+                }
             });
 
-            // Start button calls the REST endpoint to kick off countdown/playing
-            startBtn.addEventListener('click', async () => {
-                try {
-                    await fetch(`/rooms/${roomId}/start`, { method: 'POST' });
-                } catch { }
+            // Ready button calls the REST endpoint to mark player as ready
+            readyBtn.addEventListener('click', async () => {
+                await fetch(`/rooms/${roomId}/ready`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ token, ready: !readyState })
+                });
             });
 
             function goToGame() {
@@ -198,7 +214,7 @@
 
             function connect() {
                 if (socket) {
-                try { socket.close(); } catch { };
+                    try { socket.close(); } catch { };
                 }
                 socket = new WebSocket(WS_URL);
 

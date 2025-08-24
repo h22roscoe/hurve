@@ -23,6 +23,7 @@ encodeEvent :: RoomEvent -> A.Value
 encodeEvent ev = case ev of
   PlayerJoined pid nm -> A.object ["type" .= ("player_joined" :: T.Text), "pid" .= unPid pid, "name" .= nm]
   PlayerLeft pid -> A.object ["type" .= ("player_left" :: T.Text), "pid" .= unPid pid]
+  ReadyChanged pid r -> A.object ["type" .= ("ready_changed" :: T.Text), "pid" .= unPid pid, "ready" .= r]
   PhaseChanged ph -> A.object ["type" .= ("phase_changed" :: T.Text), "phase" .= show ph]
   RoundStart n -> A.object ["type" .= ("round_start" :: T.Text), "round" .= n]
   RoundOver n ps -> A.object ["type" .= ("round_over" :: T.Text), "round" .= n, "survivors" .= map unPid ps]
@@ -48,13 +49,14 @@ roomSSEApp LobbyState {..} req send = do
                 cls <- clientsSnapshot rg
                 ph <- readTVar (rgPhase rg)
                 rn <- readTVar (rgRound rg)
+                rmap <- readTVar (rgReady rg)
                 pure $
                   A.encode $
                     A.object
                       [ "type" .= ("snapshot" :: T.Text),
                         "phase" .= show ph,
                         "round" .= rn,
-                        "clients" .= [A.object ["pid" .= unPid p, "name" .= nm] | (p, nm) <- cls]
+                        "clients" .= [A.object ["pid" .= unPid p, "name" .= nm, "ready" .= M.findWithDefault False p rmap] | (p, nm) <- cls]
                       ]
               let firstEvent = ServerEvent {eventName = Just "snapshot", eventId = Nothing, eventData = [lazyByteString snapshot]}
               -- Bridge TChan RoomEvent -> SSE stream

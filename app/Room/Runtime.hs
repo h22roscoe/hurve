@@ -8,6 +8,7 @@ import Control.Concurrent (threadDelay)
 import Control.Concurrent.Async (Async, async, cancel)
 import Control.Concurrent.STM
 import Control.Monad (void, when)
+import Data.Aeson ((.=))
 import qualified Data.Aeson as A
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.Map.Strict as M
@@ -25,6 +26,7 @@ data Phase = Waiting | Countdown Time | Playing | BetweenRounds Time | Finished 
 data RoomEvent
   = PlayerJoined PlayerId Text
   | PlayerLeft PlayerId
+  | ReadyChanged PlayerId Bool
   | PhaseChanged Phase
   | RoundStart Int
   | RoundOver Int [PlayerId]
@@ -48,6 +50,7 @@ data RoomGame = RoomGame
     rgScore :: TVar (M.Map PlayerId Int),
     rgInputs :: TChan (PlayerId, Turn),
     rgClients :: TVar (M.Map PlayerId Client),
+    rgReady :: TVar (M.Map PlayerId Bool),
     rgEvents :: TChan RoomEvent,
     rgTickThr :: Async ()
   }
@@ -68,6 +71,8 @@ instance ToHttpApiData RoomId where
 newtype JoinToken = JoinToken UUID.UUID deriving (Eq, Ord, Show)
 
 instance A.ToJSON JoinToken where toJSON (JoinToken u) = A.toJSON (UUID.toText u)
+
+instance A.FromJSON JoinToken where parseJSON = A.withText "JoinToken" $ \t -> maybe (fail "bad join token") (pure . JoinToken) (UUID.fromText t)
 
 instance FromHttpApiData JoinToken where
   parseUrlPiece t =
@@ -100,8 +105,9 @@ startRoomGame rid = do
     rgScore <- newTVar M.empty
     rgInputs <- newTChan
     rgClients <- newTVar M.empty
+    rgReady <- newTVar M.empty
     rgEvents <- newTChan
-    pure RoomGame {rgId = rid, rgWorld, rgPhase, rgRound, rgRoundStart, rgScore, rgInputs, rgClients, rgEvents, rgTickThr = unsafeCoerce ()}
+    pure RoomGame {rgId = rid, rgWorld, rgPhase, rgRound, rgRoundStart, rgScore, rgInputs, rgClients, rgReady, rgEvents, rgTickThr = unsafeCoerce ()}
 
 launchTick :: RoomGame -> Int -> IO RoomGame
 launchTick rg hz = do
@@ -115,6 +121,7 @@ stopRoom RoomGame {..} = cancel rgTickThr
 addClient :: LobbyState -> RoomGame -> Client -> STM ()
 addClient st RoomGame {..} c = do
   modifyTVar' rgClients (M.insert (cPid c) c)
+  modifyTVar' rgReady (M.insert (cPid c) False)
   writeTChan rgEvents (PlayerJoined (cPid c) (cName c))
   cs <- readTVar rgClients
   ph <- readTVar rgPhase
@@ -123,19 +130,33 @@ addClient st RoomGame {..} c = do
 removeClient :: LobbyState -> RoomGame -> PlayerId -> STM ()
 removeClient st RoomGame {..} p = do
   modifyTVar' rgClients (M.delete p)
+  modifyTVar' rgReady (M.delete p)
   writeTChan rgEvents (PlayerLeft p)
   cs <- readTVar rgClients
   ph <- readTVar rgPhase
   writeTChan (lsLobbyEvents st) (LobbyRoomUpsert rgId (M.size cs) ph)
 
--- Utility: current clients snapshot
+-- Utility
+
 clientsSnapshot :: RoomGame -> STM [(PlayerId, Text)]
 clientsSnapshot RoomGame {..} = do
   cs <- readTVar rgClients
   pure [(cPid c, cName c) | c <- M.elems cs]
 
--- Tick loop with simple phase machine
+readyCount :: RoomGame -> STM (Int, Int) -- (ready, totalConnected)
+readyCount RoomGame {..} = do
+  cs <- readTVar rgClients
+  rmap <- readTVar rgReady
+  let total = M.size cs
+      ready = length [() | (pid, True) <- M.toList rmap, M.member pid cs]
+  pure (ready, total)
 
+hasQuorum :: RoomGame -> STM Bool
+hasQuorum rg = do
+  (r, t) <- readyCount rg
+  pure (t >= 1 && r * 2 > t)
+
+-- Tick loop with simple phase machine
 tickLoop :: RoomGame -> Int -> IO ()
 tickLoop rg@RoomGame {..} hz = go
   where
@@ -207,11 +228,11 @@ broadcastState rg@RoomGame {..} = do
           [ A.String "state",
             A.toJSON (tick w),
             A.object
-              [ "world" A..= worldObj w,
-                "score" A..= [[A.toJSON (unPid p), A.toJSON s] | (p, s) <- M.toList sc],
-                "phase" A..= show ph,
-                "round" A..= rn,
-                "clients" A..= [A.object ["pid" A..= unPid p, "name" A..= nm] | (p, nm) <- cls]
+              [ "world" .= worldObj w,
+                "score" .= [[A.toJSON (unPid p), A.toJSON s] | (p, s) <- M.toList sc],
+                "phase" .= show ph,
+                "round" .= rn,
+                "clients" .= [A.object ["pid" .= unPid p, "name" .= nm] | (p, nm) <- cls]
               ]
           ]
   atomically $ mapM_ (\c -> void $ writeTBQueue (cOut c) payload) (M.elems cs)
@@ -220,13 +241,13 @@ broadcastState rg@RoomGame {..} = do
 worldObj :: World -> A.Value
 worldObj w =
   A.object
-    [ "tick" A..= tick w,
-      "width" A..= width w,
-      "height" A..= height w,
-      "speed" A..= speed w,
-      "turnRate" A..= turnRate w,
-      "headRadiusPx" A..= headRadiusPx w,
-      "tailRadiusPx" A..= tailRadiusPx w,
-      "players" A..= players w,
-      "trails" A..= map (\(cell, (pid, _)) -> A.toJSON [fst cell, snd cell, unPid pid]) (M.toList (trails w))
+    [ "tick" .= tick w,
+      "width" .= width w,
+      "height" .= height w,
+      "speed" .= speed w,
+      "turnRate" .= turnRate w,
+      "headRadiusPx" .= headRadiusPx w,
+      "tailRadiusPx" .= tailRadiusPx w,
+      "players" .= players w,
+      "trails" .= map (\(cell, (pid, _)) -> A.toJSON [fst cell, snd cell, unPid pid]) (M.toList (trails w))
     ]
