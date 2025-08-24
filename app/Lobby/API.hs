@@ -31,10 +31,14 @@ data JoinRes = JoinRes {token :: JoinToken, pid :: Int, wsUrl :: Text} deriving 
 
 instance ToJSON JoinRes
 
+data ReadyReq = ReadyReq { token :: JoinToken, ready :: Bool } deriving (Generic, Show)
+
+instance FromJSON ReadyReq
+
 type LobbyAPI =
   "rooms" :> ReqBody '[JSON] CreateRoomReq :> Post '[JSON] CreateRoomRes
     :<|> "rooms" :> Get '[JSON] [RoomMeta]
     :<|> "rooms" :> Capture "roomId" RoomId :> "join" :> ReqBody '[JSON] JoinReq :> Post '[JSON] JoinRes
-    :<|> "rooms" :> Capture "roomId" RoomId :> "start" :> PostNoContent
+    :<|> "rooms" :> Capture "roomId" RoomId :> "ready" :> ReqBody '[JSON] ReadyReq :> PostNoContent
     :<|> "rooms" :> Capture "roomId" RoomId :> DeleteNoContent
     :<|> Raw

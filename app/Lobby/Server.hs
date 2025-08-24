@@ -9,7 +9,7 @@
 module Lobby.Server where
 
 import Control.Concurrent.STM
-import Control.Monad (forM)
+import Control.Monad (forM, when)
 import Control.Monad.IO.Class (liftIO)
 import qualified Data.Map.Strict as M
 import qualified Data.Text as T
@@ -25,7 +25,7 @@ lobbyApi :: Proxy LobbyAPI
 lobbyApi = Proxy
 
 server :: LobbyState -> Server LobbyAPI
-server st = createRoomH st :<|> listRoomsH st :<|> joinRoomH st :<|> startH st :<|> deleteH st :<|> serveDirectoryWebApp "static"
+server st = createRoomH st :<|> listRoomsH st :<|> joinRoomH st :<|> readyH st :<|> deleteH st :<|> serveDirectoryWebApp "static"
 
 mkApp :: LobbyState -> Application
 mkApp st = simpleCors $ serve lobbyApi (server st)
@@ -69,17 +69,31 @@ joinRoomH LobbyState {..} rid JoinReq {..} = do
       let ws = T.pack ("ws://localhost:9160/ws/" <> show rid <> "/" <> show tok)
       pure JoinRes {token = tok, pid = pid, wsUrl = ws}
 
-startH :: LobbyState -> RoomId -> Handler NoContent
-startH LobbyState {..} rid = do
+readyH :: LobbyState -> RoomId -> ReadyReq -> Handler NoContent
+readyH LobbyState {..} rid ReadyReq {..} = do
   rms <- liftIO $ readTVarIO lsRooms
   case M.lookup rid rms of
     Nothing -> throwError err404
-    Just rg -> liftIO . atomically $ do
-      w <- readTVar (rgWorld rg)
-      let deadline = tick w + 120 -- ~2s at 60Hz
-      writeTVar (rgPhase rg) (Countdown deadline)
-      writeTChan (rgEvents rg) (PhaseChanged (Countdown deadline))
-  pure NoContent
+    Just rg -> do
+      mt <- liftIO . atomically $ do
+        m <- readTVar lsTokens
+        pure (M.lookup token m)
+      case mt of
+        Just (rid', pid, _nm) | rid' == rid -> do
+          liftIO . atomically $ do
+            cs <- readTVar (rgClients rg)
+            when (M.member pid cs) $ do
+              modifyTVar' (rgReady rg) (M.insert pid ready)
+              writeTChan (rgEvents rg) (ReadyChanged pid ready)
+              q <- hasQuorum rg
+              ph <- readTVar (rgPhase rg)
+              when (q && ph == Waiting) $ do
+                w <- readTVar (rgWorld rg)
+                let deadline = tick w + 180
+                writeTVar (rgPhase rg) (Countdown deadline)
+                writeTChan (rgEvents rg) (PhaseChanged (Countdown deadline))
+          pure NoContent
+        _ -> throwError err403
 
 deleteH :: LobbyState -> RoomId -> Handler NoContent
 deleteH LobbyState {..} rid = do
