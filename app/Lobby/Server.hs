@@ -95,18 +95,6 @@ readyH LobbyState {..} rid ReadyReq {..} = do
           pure NoContent
         _ -> throwError err403
 
-startH :: LobbyState -> RoomId -> Handler NoContent
-startH LobbyState {..} rid = do
-  rms <- liftIO $ readTVarIO lsRooms
-  case M.lookup rid rms of
-    Nothing -> throwError err404
-    Just rg -> liftIO . atomically $ do
-      w <- readTVar (rgWorld rg)
-      let deadline = tick w + 120 -- ~2s at 60Hz
-      writeTVar (rgPhase rg) (Countdown deadline)
-      writeTChan (rgEvents rg) (PhaseChanged (Countdown deadline))
-  pure NoContent
-
 deleteH :: LobbyState -> RoomId -> Handler NoContent
 deleteH LobbyState {..} rid = do
   mrt <- liftIO . atomically $ do
