@@ -97,151 +97,195 @@
       </footer>
     </div>
     <script>
-      (function () {
-        const q = new URLSearchParams(location.search);
-        const roomId = q.get("roomId");
-        const token = q.get("token");
-        if (!roomId || !token) {
-          alert("Missing roomId/token");
-          return;
-        }
+(() => {
+  // ---------------------------
+  // Params & derived WS URL
+  // ---------------------------
+  const q = new URLSearchParams(location.search);
+  const roomId = q.get("roomId");
+  const token  = q.get("token");
+  if (!roomId || !token) {
+    alert("Missing roomId/token");
+    return;
+  }
+  const WS_URL = (location.protocol === "https:" ? "wss://" : "ws://")
+               + location.host
+               + "/ws/" + roomId + "/" + token;
 
-        const playersUl = document.getElementById("players");
-        const phaseEl = document.getElementById("phase");
-        const readyBtn = document.getElementById("readyBtn");
+  // ---------------------------
+  // DOM elements
+  // ---------------------------
+  const playersUl = document.getElementById("players");
+  const phaseEl   = document.getElementById("phase");
+  const readyBtn  = document.getElementById("readyBtn");
 
-        let readyState = false;
+  // ---------------------------
+  // Tiny helpers (pure)
+  // ---------------------------
+  const h = (tag, props = {}, children = []) => {
+    const el = document.createElement(tag);
+    for (const [k, v] of Object.entries(props)) {
+      if (k === "class") el.className = v;
+      else if (k === "dataset") Object.assign(el.dataset, v);
+      else if (k === "style" && typeof v === "object") Object.assign(el.style, v);
+      else el.setAttribute(k, v);
+    }
+    for (const c of [].concat(children)) {
+      el.appendChild(typeof c === "string" ? document.createTextNode(c) : c);
+    }
+    return el;
+  };
+  const t = s => document.createTextNode(s);
 
-        let WS_URL;
-        // Prefer constructing the WebSocket URL from the roomId and token. The
-        // wsUrlParam may contain type names ("RoomId", "JoinToken") when
-        // returned from the Haskell server, which makes the path invalid. Only
-        // fall back to the wsUrlParam if roomId or token are missing.
-        if (roomId && token) {
-          const protocol = location.protocol === "https:" ? "wss://" : "ws://";
-          WS_URL = protocol + location.host + "/ws/" + roomId + "/" + token;
-        } else if (wsUrlParam) {
-          WS_URL = wsUrlParam;
-        } else {
-          alert("Missing room or token in URL");
-          return;
-        }
+  const viewPlayer = ({ pid, name, ready }) =>
+    h("li", {}, [
+      h("span", { id: `player-${pid}` }, [name]),
+      h("span", { class: "readiness", style: { marginLeft: "0.5rem" } }, [ready ? "🚀" : "⏳"])
+    ]);
 
-        let socket = null;
-        connect();
+  const viewPlayers = (players) => {
+    const frag = document.createDocumentFragment();
+    for (const p of players) frag.appendChild(viewPlayer(p));
+    return frag;
+  };
 
-        // Helper to render players
-        function renderPlayers(list) {
-          playersUl.innerHTML = "";
-          list.forEach(({ pid, name, ready }) => {
-            const li = document.createElement("li");
-            const tag = `<span id="player-${pid}">${name}</span>`;
-            const emoji = `<span class="readiness">${
-              !!ready ? "🚀" : "⏳"
-            }</span>`;
-            li.innerHTML = tag + emoji;
-            playersUl.appendChild(li);
-          });
-        }
+  // pure transforms for SSE events
+  const playersUpsert = (players, p) => {
+    const i = players.findIndex(x => x.pid === p.pid);
+    return i === -1
+      ? players.concat([p])
+      : players.map((x, idx) => idx === i ? { ...x, ...p } : x);
+  };
+  const playersRemove = (players, pid) =>
+    players.filter(p => p.pid !== pid);
 
-        // Wire SSE for live updates
-        const sseUrl = `/rooms/${roomId}/sse`;
-        const es = new EventSource(sseUrl);
+  // ---------------------------
+  // State + reducer-ish updates
+  // ---------------------------
+  let state = Object.freeze({
+    players: [],     // [{pid, name, ready}]
+    phase: "",       // string
+    ready: false,    // our local toggle target
+    socket: null,    // WebSocket
+    es: null         // EventSource
+  });
 
-        es.addEventListener("snapshot", (e) => {
-          try {
-            const data = JSON.parse(e.data);
-            if (data.phase) phaseEl.textContent = `Phase: ${data.phase}`;
-            if (Array.isArray(data.clients)) {
-              renderPlayers(
-                data.clients.map((c) => ({
-                  pid: c.pid,
-                  name: c.name,
-                  ready: c.ready,
-                }))
-              );
-            }
-            // If already Playing (late join), go straight to game
-            if (data.phase === "Playing") goToGame();
-          } catch {}
+  const setState = (patch) => {
+    state = { ...state, ...(typeof patch === "function" ? patch(state) : patch) };
+    render();
+    return state;
+  };
+
+  const render = () => {
+    // phase
+    phaseEl.textContent = `Phase: ${state.phase || ""}`;
+    // players
+    playersUl.innerHTML = "";
+    playersUl.appendChild(viewPlayers(state.players));
+    // ready button label (reflect local intent)
+    readyBtn.textContent = state.ready ? "Unready" : "Ready";
+  };
+
+  // ---------------------------
+  // Effects (I/O)
+  // ---------------------------
+  const postJSON = async (url, body) => {
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body)
+      });
+      return { ok: res.ok, data: res.ok ? await res.json().catch(() => null) : null };
+    } catch (e) {
+      console.error("POST failed", url, e);
+      return { ok: false, data: null };
+    }
+  };
+
+  const navigateToGame = () => {
+    const p = new URLSearchParams({ roomId, token });
+    location.href = "room_game.html?" + p.toString();
+  };
+
+  // WebSocket (presence/keepalive/reconnect)
+  const connectWS = () => {
+    if (state.socket) { try { state.socket.close(); } catch {} }
+    const ws = new WebSocket(WS_URL);
+    ws.onclose = () => setTimeout(connectWS, 1000);
+    setState({ socket: ws });
+  };
+
+  // Server-Sent Events wiring
+  const connectSSE = () => {
+    if (state.es) { try { state.es.close(); } catch {} }
+    const es = new EventSource(`/rooms/${roomId}/sse`);
+
+    es.addEventListener("snapshot", (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        const players = Array.isArray(data.clients)
+          ? data.clients.map(c => ({ pid: c.pid, name: c.name, ready: !!c.ready }))
+          : [];
+        setState({
+          phase: data.phase || "",
+          players
         });
+        if (data.phase === "Playing") navigateToGame();
+      } catch {}
+    });
 
-        es.addEventListener("room", (e) => {
-          const ev = JSON.parse(e.data);
-          switch (ev.type) {
-            case "player_joined": {
-              // append if not present
-              const exists = !!playersUl.querySelector(`#player-${ev.pid}`);
-              if (!exists) {
-                const tag = `<span id="player-${ev.pid}">${ev.name}</span>`;
-                const emoji = `<span class="readiness">⏳</span>`;
-                const li = document.createElement("li");
-                li.innerHTML = tag + emoji;
-                playersUl.appendChild(li);
-              }
-              break;
-            }
-            case "player_left": {
-              const existingLi = playersUl.querySelector(
-                `#player-${ev.pid}`
-              ).parentElement;
-              if (!existingLi) break;
-              existingLi.remove();
-              break;
-            }
-            case "phase_changed": {
-              phaseEl.textContent = `Phase: ${ev.phase}`;
-              if (ev.phase === "Playing") goToGame();
-              break;
-            }
-            case "ready_changed": {
-              const existingLi = playersUl.querySelector(
-                `#player-${ev.pid}`
-              ).parentElement;
-              if (!existingLi) break;
-
-              const emoji = !!ev.ready ? "🚀" : "⏳";
-              const existingReadiness = existingLi.querySelector(".readiness");
-              if (!existingReadiness) break;
-              existingReadiness.textContent = emoji;
-              break;
-            }
-            case "score_update":
-            case "round_start":
-            case "round_over":
-              break;
-          }
-        });
-
-        // Ready button calls the REST endpoint to mark player as ready
-        readyBtn.addEventListener("click", async () => {
-          await fetch(`/rooms/${roomId}/ready`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ token, ready: !readyState }),
-          });
-        });
-
-        function goToGame() {
-          es.close();
-          const p = new URLSearchParams({ roomId, token });
-          location.href = "room_game.html?" + p.toString();
+    es.addEventListener("room", (e) => {
+      let ev; try { ev = JSON.parse(e.data); } catch { return; }
+      switch (ev.type) {
+        case "player_joined": {
+          setState(s => ({ players: playersUpsert(s.players, { pid: ev.pid, name: ev.name, ready: false }) }));
+          break;
         }
-
-        function connect() {
-          if (socket) {
-            try {
-              socket.close();
-            } catch {}
-          }
-          socket = new WebSocket(WS_URL);
-
-          socket.onclose = () => {
-            // Attempt reconnect after 1 second
-            setTimeout(connect, 1000);
-          };
+        case "player_left": {
+          setState(s => ({ players: playersRemove(s.players, ev.pid) }));
+          break;
         }
-      })();
-    </script>
+        case "phase_changed": {
+          setState({ phase: ev.phase || "" });
+          if (ev.phase === "Playing") navigateToGame();
+          break;
+        }
+        case "ready_changed": {
+          setState(s => ({ players: playersUpsert(s.players, { pid: ev.pid, ready: !!ev.ready }) }));
+          // Optional: if this was *you*, reflect on the button by mirroring server truth.
+          // We don't have a reliable self pid here; keeping local `state.ready` as the toggle hint is fine.
+          break;
+        }
+        case "score_update":
+        case "round_start":
+        case "round_over":
+        default:
+          break;
+      }
+    });
+
+    setState({ es });
+  };
+
+  // ---------------------------
+  // UI events (compose effects)
+  // ---------------------------
+  readyBtn.addEventListener("click", async () => {
+    const desired = !state.ready;
+    // optimistic local toggle (button label); server will broadcast actual readiness via SSE
+    setState({ ready: desired });
+    await postJSON(`/rooms/${roomId}/ready`, { token, ready: desired });
+  });
+
+  // ---------------------------
+  // Boot
+  // ---------------------------
+  connectWS();
+  connectSSE();
+  render();
+})();
+</script>
+
   </body>
 </html>
