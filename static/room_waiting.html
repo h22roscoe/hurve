@@ -1,230 +1,247 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
-
-<head>
+  <head>
     <meta charset="utf-8" />
     <title>Hurve Room – Waiting</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <style>
-        :root {
-            --bg: #0b0d12;
-            --fg: #e8eef8;
-            --muted: #94a3b8;
-            --accent: #22d3ee;
-        }
+      :root {
+        --bg: #0b0d12;
+        --fg: #e8eef8;
+        --muted: #94a3b8;
+        --accent: #22d3ee;
+      }
 
-        html,
-        body {
-            height: 100%;
-            margin: 0;
-            background: var(--bg);
-            color: var(--fg);
-            font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, Ubuntu, Cantarell, Arial, sans-serif;
-        }
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, Ubuntu,
+          Cantarell, Arial, sans-serif;
+      }
 
-        .wrap {
-            display: flex;
-            flex-direction: column;
-            height: 100%;
-        }
+      .wrap {
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+      }
 
-        header,
-        footer {
-            padding: 10px 12px;
-            border-bottom: 1px solid #1f2937;
-        }
+      header,
+      footer {
+        padding: 10px 12px;
+        border-bottom: 1px solid #1f2937;
+      }
 
-        footer {
-            border-bottom: none;
-            border-top: 1px solid #1f2937;
-            color: var(--muted);
-        }
+      footer {
+        border-bottom: none;
+        border-top: 1px solid #1f2937;
+        color: var(--muted);
+      }
 
-        main {
-            flex: 1;
-            padding: 12px;
-        }
+      main {
+        flex: 1;
+        padding: 12px;
+      }
 
-        ul {
-            list-style: none;
-            padding: 0;
-            margin: 0;
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-        }
+      ul {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
 
-        li {
-            background: #0f172a;
-            padding: 8px 10px;
-            border-radius: 6px;
-        }
+      li {
+        background: #0f172a;
+        padding: 8px 10px;
+        border-radius: 6px;
+      }
 
-        button {
-            padding: 6px 12px;
-            border: none;
-            border-radius: 6px;
-            background: var(--accent);
-            color: #000;
-            cursor: pointer;
-        }
+      button {
+        padding: 6px 12px;
+        border: none;
+        border-radius: 6px;
+        background: var(--accent);
+        color: #000;
+        cursor: pointer;
+      }
 
-        .row {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-        }
+      .row {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
 
-        .grow {
-            flex: 1;
-        }
+      .grow {
+        flex: 1;
+      }
     </style>
-</head>
+  </head>
 
-<body>
+  <body>
     <div class="wrap">
-        <header class="row">
-            <strong>Room – Waiting</strong>
-            <span id="phase" class="grow">Phase: Waiting</span>
-            <button id="readyBtn" title="Ready">Ready</button>
-        </header>
-        <main>
-            <h3>Players</h3>
-            <ul id="players">
-            </ul>
-        </main>
-        <footer>This view will automatically switch to the game when the round starts.</footer>
+      <header class="row">
+        <strong>Room – Waiting</strong>
+        <span id="phase" class="grow">Phase: Waiting</span>
+        <button id="readyBtn" title="Ready">Ready</button>
+      </header>
+      <main>
+        <h3>Players</h3>
+        <ul id="players"></ul>
+      </main>
+      <footer>
+        This view will automatically switch to the game when the round starts.
+      </footer>
     </div>
     <script>
-        (function () {
-            const q = new URLSearchParams(location.search);
-            const roomId = q.get('roomId');
-            const token = q.get('token');
-            if (!roomId || !token) { alert('Missing roomId/token'); return; }
+      (function () {
+        const q = new URLSearchParams(location.search);
+        const roomId = q.get("roomId");
+        const token = q.get("token");
+        if (!roomId || !token) {
+          alert("Missing roomId/token");
+          return;
+        }
 
-            const playersUl = document.getElementById('players');
-            const phaseEl = document.getElementById('phase');
-            const readyBtn = document.getElementById('readyBtn');
+        const playersUl = document.getElementById("players");
+        const phaseEl = document.getElementById("phase");
+        const readyBtn = document.getElementById("readyBtn");
 
-            let readyState = false;
+        let readyState = false;
 
-            let WS_URL;
-            // Prefer constructing the WebSocket URL from the roomId and token. The
-            // wsUrlParam may contain type names ("RoomId", "JoinToken") when
-            // returned from the Haskell server, which makes the path invalid. Only
-            // fall back to the wsUrlParam if roomId or token are missing.
-            if (roomId && token) {
-                const protocol = location.protocol === 'https:' ? 'wss://' : 'ws://';
-                WS_URL = protocol + location.host + '/ws/' + roomId + '/' + token;
-            } else if (wsUrlParam) {
-                WS_URL = wsUrlParam;
-            } else {
-                alert('Missing room or token in URL');
-                return;
+        let WS_URL;
+        // Prefer constructing the WebSocket URL from the roomId and token. The
+        // wsUrlParam may contain type names ("RoomId", "JoinToken") when
+        // returned from the Haskell server, which makes the path invalid. Only
+        // fall back to the wsUrlParam if roomId or token are missing.
+        if (roomId && token) {
+          const protocol = location.protocol === "https:" ? "wss://" : "ws://";
+          WS_URL = protocol + location.host + "/ws/" + roomId + "/" + token;
+        } else if (wsUrlParam) {
+          WS_URL = wsUrlParam;
+        } else {
+          alert("Missing room or token in URL");
+          return;
+        }
+
+        let socket = null;
+        connect();
+
+        // Helper to render players
+        function renderPlayers(list) {
+          playersUl.innerHTML = "";
+          list.forEach(({ pid, name, ready }) => {
+            const li = document.createElement("li");
+            const tag = `<span id="player-${pid}">${name}</span>`;
+            const emoji = `<span class="readiness">${
+              !!ready ? "🚀" : "⏳"
+            }</span>`;
+            li.innerHTML = tag + emoji;
+            playersUl.appendChild(li);
+          });
+        }
+
+        // Wire SSE for live updates
+        const sseUrl = `/rooms/${roomId}/sse`;
+        const es = new EventSource(sseUrl);
+
+        es.addEventListener("snapshot", (e) => {
+          try {
+            const data = JSON.parse(e.data);
+            if (data.phase) phaseEl.textContent = `Phase: ${data.phase}`;
+            if (Array.isArray(data.clients)) {
+              renderPlayers(
+                data.clients.map((c) => ({
+                  pid: c.pid,
+                  name: c.name,
+                  ready: c.ready,
+                }))
+              );
             }
+            // If already Playing (late join), go straight to game
+            if (data.phase === "Playing") goToGame();
+          } catch {}
+        });
 
-            let socket = null;
-            connect();
-
-            // Helper to render players
-            function renderPlayers(list) {
-                playersUl.innerHTML = '';
-                list.forEach(({ pid, name, ready }) => {
-                    const li = document.createElement('li');
-                    const tag = `<span id="player-${pid}">${name}</span>`;
-                    const emoji = `<span class="readiness">${!!ready ? "🚀" : "⏳"}</span>`;
-                    li.innerHTML = tag + emoji;
-                    playersUl.appendChild(li);
-                });
+        es.addEventListener("room", (e) => {
+          const ev = JSON.parse(e.data);
+          switch (ev.type) {
+            case "player_joined": {
+              // append if not present
+              const exists = !!playersUl.querySelector(`#player-${ev.pid}`);
+              if (!exists) {
+                const tag = `<span id="player-${ev.pid}">${ev.name}</span>`;
+                const emoji = `<span class="readiness">⏳</span>`;
+                const li = document.createElement("li");
+                li.innerHTML = tag + emoji;
+                playersUl.appendChild(li);
+              }
+              break;
             }
-
-            // Wire SSE for live updates
-            const sseUrl = `/rooms/${roomId}/sse`;
-            const es = new EventSource(sseUrl);
-
-            es.addEventListener('snapshot', (e) => {
-                try {
-                    const data = JSON.parse(e.data);
-                    if (data.phase) phaseEl.textContent = `Phase: ${data.phase}`;
-                    if (Array.isArray(data.clients)) {
-                        renderPlayers(data.clients.map(c => ({ pid: c.pid, name: c.name, ready: c.ready })));
-                    }
-                    // If already Playing (late join), go straight to game
-                    if (data.phase === 'Playing') goToGame();
-                } catch { }
-            });
-
-            es.addEventListener('room', (e) => {
-                const ev = JSON.parse(e.data);
-                switch (ev.type) {
-                    case 'player_joined': {
-                        // append if not present
-                        const exists = !!playersUl.querySelector(`#player-${ev.pid}`);
-                        if (!exists) {
-                            const tag = `<span id="player-${ev.pid}">${ev.name}</span>`;
-                            const emoji = `<span class="readiness">⏳</span>`;
-                            const li = document.createElement('li');
-                            li.innerHTML = tag + emoji;
-                            playersUl.appendChild(li);
-                        }
-                        break;
-                    }
-                    case 'player_left': {
-                        const existingLi = playersUl.querySelector(`#player-${ev.pid}`).parentElement;
-                        if (!existingLi) break;
-                        existingLi.remove();
-                        break;
-                    }
-                    case 'phase_changed': {
-                        phaseEl.textContent = `Phase: ${ev.phase}`;
-                        if (ev.phase === 'Playing') goToGame();
-                        break;
-                    }
-                    case 'ready_changed': {
-                        const existingLi = playersUl.querySelector(`#player-${ev.pid}`).parentElement;
-                        if (!existingLi) break;
-
-                        const emoji = !!ev.ready ? "🚀" : "⏳";
-                        const existingReadiness = existingLi.querySelector(".readiness");
-                        if (!existingReadiness) break;
-                        existingReadiness.textContent = emoji;
-                        break;
-                    }
-                    case 'score_update':
-                    case 'round_start':
-                    case 'round_over':
-                        break;
-                }
-            });
-
-            // Ready button calls the REST endpoint to mark player as ready
-            readyBtn.addEventListener('click', async () => {
-                await fetch(`/rooms/${roomId}/ready`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ token, ready: !readyState })
-                });
-            });
-
-            function goToGame() {
-                es.close();
-                const p = new URLSearchParams({ roomId, token });
-                location.href = 'room_game.html?' + p.toString();
+            case "player_left": {
+              const existingLi = playersUl.querySelector(
+                `#player-${ev.pid}`
+              ).parentElement;
+              if (!existingLi) break;
+              existingLi.remove();
+              break;
             }
-
-            function connect() {
-                if (socket) {
-                    try { socket.close(); } catch { };
-                }
-                socket = new WebSocket(WS_URL);
-
-                socket.onclose = () => {
-                    // Attempt reconnect after 1 second
-                    setTimeout(connect, 1000);
-                };
+            case "phase_changed": {
+              phaseEl.textContent = `Phase: ${ev.phase}`;
+              if (ev.phase === "Playing") goToGame();
+              break;
             }
-        })();
+            case "ready_changed": {
+              const existingLi = playersUl.querySelector(
+                `#player-${ev.pid}`
+              ).parentElement;
+              if (!existingLi) break;
+
+              const emoji = !!ev.ready ? "🚀" : "⏳";
+              const existingReadiness = existingLi.querySelector(".readiness");
+              if (!existingReadiness) break;
+              existingReadiness.textContent = emoji;
+              break;
+            }
+            case "score_update":
+            case "round_start":
+            case "round_over":
+              break;
+          }
+        });
+
+        // Ready button calls the REST endpoint to mark player as ready
+        readyBtn.addEventListener("click", async () => {
+          await fetch(`/rooms/${roomId}/ready`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ token, ready: !readyState }),
+          });
+        });
+
+        function goToGame() {
+          es.close();
+          const p = new URLSearchParams({ roomId, token });
+          location.href = "room_game.html?" + p.toString();
+        }
+
+        function connect() {
+          if (socket) {
+            try {
+              socket.close();
+            } catch {}
+          }
+          socket = new WebSocket(WS_URL);
+
+          socket.onclose = () => {
+            // Attempt reconnect after 1 second
+            setTimeout(connect, 1000);
+          };
+        }
+      })();
     </script>
-</body>
-
+  </body>
 </html>

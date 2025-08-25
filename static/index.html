@@ -1,348 +1,373 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Hurve Lobby</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      :root {
+        /* Dark theme colours */
+        --bg: #0b0d12;
+        --fg: #e8eef8;
+        --muted: #94a3b8;
+        --accent: #22d3ee;
+      }
 
-<head>
-  <meta charset="utf-8" />
-  <title>Hurve Lobby</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <style>
-    :root {
-      /* Dark theme colours */
-      --bg: #0b0d12;
-      --fg: #e8eef8;
-      --muted: #94a3b8;
-      --accent: #22d3ee;
-    }
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, Ubuntu,
+          Cantarell, "Helvetica Neue", Arial, sans-serif;
+      }
 
-    html,
-    body {
-      height: 100%;
-      margin: 0;
-      background: var(--bg);
-      color: var(--fg);
-      font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, Ubuntu, Cantarell, "Helvetica Neue", Arial, sans-serif;
-    }
+      .wrap {
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+      }
 
-    .wrap {
-      display: flex;
-      flex-direction: column;
-      height: 100%;
-    }
+      header {
+        padding: 10px 12px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        align-items: center;
+        border-bottom: 1px solid #1f2937;
+      }
 
-    header {
-      padding: 10px 12px;
-      display: flex;
-      flex-wrap: wrap;
-      gap: 12px;
-      align-items: center;
-      border-bottom: 1px solid #1f2937;
-    }
+      header input {
+        padding: 4px 8px;
+        border: 1px solid #374151;
+        border-radius: 6px;
+        background: #111827;
+        color: var(--fg);
+      }
 
-    header input {
-      padding: 4px 8px;
-      border: 1px solid #374151;
-      border-radius: 6px;
-      background: #111827;
-      color: var(--fg);
-    }
+      header button {
+        padding: 6px 12px;
+        border: none;
+        border-radius: 6px;
+        background: var(--accent);
+        color: #000;
+        cursor: pointer;
+      }
 
-    header button {
-      padding: 6px 12px;
-      border: none;
-      border-radius: 6px;
-      background: var(--accent);
-      color: #000;
-      cursor: pointer;
-    }
+      main {
+        flex: 1;
+        overflow-y: auto;
+        padding: 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
 
-    main {
-      flex: 1;
-      overflow-y: auto;
-      padding: 12px;
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-    }
+      .room {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        background: #0f172a;
+        border-radius: 6px;
+        padding: 8px 12px;
+      }
 
-    .room {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      background: #0f172a;
-      border-radius: 6px;
-      padding: 8px 12px;
-    }
+      .room button {
+        margin-left: auto;
+        padding: 4px 8px;
+        border: none;
+        border-radius: 4px;
+        background: var(--accent);
+        color: #000;
+        cursor: pointer;
+      }
 
-    .room button {
-      margin-left: auto;
-      padding: 4px 8px;
-      border: none;
-      border-radius: 4px;
-      background: var(--accent);
-      color: #000;
-      cursor: pointer;
-    }
+      footer {
+        padding: 10px 12px;
+        border-top: 1px solid #1f2937;
+        color: var(--muted);
+      }
+    </style>
+  </head>
 
-    footer {
-      padding: 10px 12px;
-      border-top: 1px solid #1f2937;
-      color: var(--muted);
-    }
-  </style>
-</head>
+  <body>
+    <div class="wrap">
+      <header>
+        <strong>Hurve Lobby</strong>
+        <label
+          >Name: <input id="displayName" type="text" placeholder="Your name"
+        /></label>
+        <button id="createRoom">Create Room</button>
+        <button id="refreshRooms">Refresh</button>
+      </header>
+      <main id="roomsList">
+        <!-- Rooms will appear here -->
+      </main>
+      <footer>
+        Select a room to play Curve Fever. Use the controls in game: left/right
+        arrows (or A/D) to turn.
+      </footer>
+    </div>
+    <script>
+      (() => {
+        // ---------------------------
+        // Pure helpers
+        // ---------------------------
+        const formatRoomId = (id) => (id == null ? "" : String(id).slice(0, 8));
 
-<body>
-  <div class="wrap">
-    <header>
-      <strong>Hurve Lobby</strong>
-      <label>Name: <input id="displayName" type="text" placeholder="Your name" /></label>
-      <button id="createRoom">Create Room</button>
-      <button id="refreshRooms">Refresh</button>
-    </header>
-    <main id="roomsList">
-      <!-- Rooms will appear here -->
-    </main>
-    <footer>
-      Select a room to play Curve Fever. Use the controls in game: left/right arrows (or A/D) to turn.
-    </footer>
-  </div>
-  <script>
-    (() => {
-      // ---------------------------
-      // Pure helpers
-      // ---------------------------
-      const formatRoomId = id =>
-        id == null ? "" : String(id).slice(0, 8);
+        // accept "status" (REST) or "phase" (SSE)
+        const deriveStatus = (room) => room?.status ?? room?.phase ?? "Waiting";
 
-      // accept "status" (REST) or "phase" (SSE)
-      const deriveStatus = room =>
-        room?.status ?? room?.phase ?? "Waiting";
+        // accept playersCount (SSE) or players array (REST)
+        const countPlayers = (room) =>
+          Number.isInteger(room?.playersCount)
+            ? room.playersCount
+            : Array.isArray(room?.players)
+            ? room.players.length
+            : 0;
 
-      // accept playersCount (SSE) or players array (REST)
-      const countPlayers = room =>
-        Number.isInteger(room?.playersCount)
-          ? room.playersCount
-          : (Array.isArray(room?.players) ? room.players.length : 0);
+        const maxPlayers = (room) => room?.maxPlayers ?? 8;
 
-      const maxPlayers = room =>
-        room?.maxPlayers ?? 8;
+        // tiny hyperscript
+        const h = (tag, props = {}, children = []) => {
+          const el = document.createElement(tag);
+          for (const [k, v] of Object.entries(props)) {
+            if (k === "class") el.className = v;
+            else if (k === "dataset") Object.assign(el.dataset, v);
+            else if (k === "style" && typeof v === "object")
+              Object.assign(el.style, v);
+            else if (k.startsWith("on") && typeof v === "function")
+              el.addEventListener(k.slice(2).toLowerCase(), v);
+            else el.setAttribute(k, v);
+          }
+          for (const c of [].concat(children)) {
+            el.appendChild(
+              typeof c === "string" ? document.createTextNode(c) : c
+            );
+          }
+          return el;
+        };
 
-      // tiny hyperscript
-      const h = (tag, props = {}, children = []) => {
-        const el = document.createElement(tag);
-        for (const [k, v] of Object.entries(props)) {
-          if (k === "class") el.className = v;
-          else if (k === "dataset") Object.assign(el.dataset, v);
-          else if (k === "style" && typeof v === "object") Object.assign(el.style, v);
-          else if (k.startsWith("on") && typeof v === "function") el.addEventListener(k.slice(2).toLowerCase(), v);
-          else el.setAttribute(k, v);
-        }
-        for (const c of [].concat(children)) {
-          el.appendChild(typeof c === "string" ? document.createTextNode(c) : c);
-        }
-        return el;
-      };
+        // ---------------------------
+        // Pure view (no side effects)
+        // ---------------------------
+        const viewRooms = (rooms) => {
+          if (!rooms?.length) {
+            return h("p", {}, ["No rooms available. Create one!"]);
+          }
+          const frag = document.createDocumentFragment();
+          for (const room of rooms) {
+            frag.appendChild(
+              h("div", { class: "room" }, [
+                h("span", {}, ["Room " + formatRoomId(room.roomId)]),
+                h("span", {}, [" (" + deriveStatus(room) + ") "]),
+                h("span", {}, [countPlayers(room) + "/" + maxPlayers(room)]),
+                h(
+                  "button",
+                  { class: "joinBtn", dataset: { roomId: room.roomId } },
+                  ["Join"]
+                ),
+              ])
+            );
+          }
+          return frag;
+        };
 
-      // ---------------------------
-      // Pure view (no side effects)
-      // ---------------------------
-      const viewRooms = rooms => {
-        if (!rooms?.length) {
-          return h("p", {}, ["No rooms available. Create one!"]);
-        }
-        const frag = document.createDocumentFragment();
-        for (const room of rooms) {
-          frag.appendChild(
-            h("div", { class: "room" }, [
-              h("span", {}, ["Room " + formatRoomId(room.roomId)]),
-              h("span", {}, [" (" + deriveStatus(room) + ") "]),
-              h("span", {}, [countPlayers(room) + "/" + maxPlayers(room)]),
-              h("button", { class: "joinBtn", dataset: { roomId: room.roomId } }, ["Join"])
-            ])
-          );
-        }
-        return frag;
-      };
+        // ---------------------------
+        // Effects (I/O boundaries)
+        // ---------------------------
+        const requestJSON = async (url, opts) => {
+          try {
+            const res = await fetch(url, opts);
+            if (!res.ok) return { ok: false, data: null };
+            const data = await res.json();
+            return { ok: true, data };
+          } catch (err) {
+            console.error("Request failed", url, err);
+            return { ok: false, data: null };
+          }
+        };
 
-      // ---------------------------
-      // Effects (I/O boundaries)
-      // ---------------------------
-      const requestJSON = async (url, opts) => {
-        try {
-          const res = await fetch(url, opts);
-          if (!res.ok) return { ok: false, data: null };
-          const data = await res.json();
-          return { ok: true, data };
-        } catch (err) {
-          console.error("Request failed", url, err);
-          return { ok: false, data: null };
-        }
-      };
+        const postJSON = (url, body) =>
+          requestJSON(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          });
 
-      const postJSON = (url, body) =>
-        requestJSON(url, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body)
+        const navigateToRoom = (roomId, token) => {
+          const params = new URLSearchParams();
+          params.set("roomId", roomId);
+          params.set("token", token);
+          window.location.href = "room_waiting.html?" + params.toString();
+        };
+
+        const readDisplayName = () => {
+          const input = document.getElementById("displayName");
+          const name = (input?.value || "").trim();
+          return name || "Guest";
+        };
+
+        // ---------------------------
+        // State + reducer-ish update
+        // ---------------------------
+        const $roomsList = document.getElementById("roomsList");
+
+        const initialState = Object.freeze({
+          rooms: [], // [{ roomId, status/phase, maxPlayers, players? or playersCount? }]
+          loading: false,
+        });
+        let state = initialState;
+
+        const render = () => {
+          $roomsList.innerHTML = "";
+          $roomsList.appendChild(viewRooms(state.rooms));
+        };
+
+        const setState = (patch) => {
+          state = {
+            ...state,
+            ...(typeof patch === "function" ? patch(state) : patch),
+          };
+          render();
+        };
+
+        // immutable upsert/remove helpers for arrays keyed by roomId
+        const upsertRoom = (rooms, next) => {
+          const i = rooms.findIndex((r) => r.roomId === next.roomId);
+          if (i === -1) return [...rooms, next];
+          // merge fields, but keep other properties if present
+          const merged = { ...rooms[i], ...next };
+          const copy = rooms.slice();
+          copy[i] = merged;
+          return copy;
+        };
+        const removeRoom = (rooms, roomId) =>
+          rooms.filter((r) => r.roomId !== roomId);
+
+        // ---------------------------
+        // Thunks (compose effects + state)
+        // ---------------------------
+        // Fallback manual refresh (still useful on first load if SSE isn’t ready)
+        const refreshRooms = async () => {
+          setState({ loading: true });
+          const { ok, data } = await requestJSON("/rooms");
+          const rooms = ok && Array.isArray(data) ? data : [];
+          setState({ rooms, loading: false });
+        };
+
+        const createRoom = async () => {
+          const req = { name: "Room", maxPlayers: 8, isPrivate: false };
+          const { ok, data } = await postJSON("/rooms", req);
+          if (ok && data?.roomId != null) {
+            await joinRoom(data.roomId);
+          }
+        };
+
+        const joinRoom = async (roomId) => {
+          const displayName = readDisplayName();
+          const { ok, data } = await postJSON(`/rooms/${roomId}/join`, {
+            displayName,
+          });
+          if (ok && data?.token) {
+            navigateToRoom(roomId, data.token);
+          } else {
+            console.error("Failed to join room", roomId);
+          }
+        };
+
+        // Lobby SSE: one stream for all rooms
+        let es = null;
+
+        const startLobbySSE = () => {
+          try {
+            es = new EventSource("/rooms/sse");
+
+            // snapshot: array of room summaries
+            es.addEventListener("snapshot", (e) => {
+              try {
+                const arr = JSON.parse(e.data) || [];
+                // normalize to your room shape; store playersCount from SSE
+                const normalized = arr.map((r) => ({
+                  roomId: r.roomId,
+                  phase: r.phase || "Waiting",
+                  maxPlayers: r.maxPlayers ?? 8,
+                  playersCount: r.players ?? 0,
+                }));
+                setState({ rooms: normalized });
+              } catch (err) {
+                console.error("SSE snapshot parse error", err);
+              }
+            });
+
+            // room: { type: 'upsert' | 'removed', roomId, players?, phase? }
+            es.addEventListener("room", (e) => {
+              try {
+                const ev = JSON.parse(e.data);
+                if (ev.type === "upsert") {
+                  const patch = {
+                    roomId: ev.roomId,
+                    phase: ev.phase || "Waiting",
+                    playersCount: Number.isInteger(ev.players)
+                      ? ev.players
+                      : undefined,
+                  };
+                  setState((s) => ({ rooms: upsertRoom(s.rooms, patch) }));
+                } else if (ev.type === "removed") {
+                  setState((s) => ({ rooms: removeRoom(s.rooms, ev.roomId) }));
+                }
+              } catch (err) {
+                console.error("SSE event parse error", err);
+              }
+            });
+
+            // optional: also update on connectivity (e.g., re-request snapshot after reconnect)
+            es.addEventListener("open", () => {
+              // No-op; server already sends snapshot on a fresh connection
+            });
+            es.onerror = () => {
+              // The browser will auto-reconnect; you can optionally show a banner, etc.
+            };
+          } catch (err) {
+            console.error("Failed to start lobby SSE", err);
+          }
+        };
+
+        // ---------------------------
+        // Event wiring (minimal, delegated)
+        // ---------------------------
+        document
+          .getElementById("createRoom")
+          .addEventListener("click", createRoom);
+        document
+          .getElementById("refreshRooms")
+          .addEventListener("click", refreshRooms);
+
+        $roomsList.addEventListener("click", (e) => {
+          const btn = e.target.closest("button.joinBtn");
+          if (!btn) return;
+          const roomId = btn.dataset.roomId;
+          if (roomId != null) joinRoom(roomId);
         });
 
-      const navigateToRoom = (roomId, token) => {
-        const params = new URLSearchParams();
-        params.set("roomId", roomId);
-        params.set("token", token);
-        window.location.href = "room_waiting.html?" + params.toString();
-      };
+        // ---------------------------
+        // Boot
+        // ---------------------------
+        document.addEventListener("DOMContentLoaded", () => {
+          // Kick off SSE; if the server isn't ready yet, the Refresh button still works
+          startLobbySSE();
+          // Optional: also do one REST fetch to seed data instantly before first SSE snapshot arrives
+          refreshRooms();
+        });
 
-      const readDisplayName = () => {
-        const input = document.getElementById("displayName");
-        const name = (input?.value || "").trim();
-        return name || "Guest";
-      };
-
-      // ---------------------------
-      // State + reducer-ish update
-      // ---------------------------
-      const $roomsList = document.getElementById("roomsList");
-
-      const initialState = Object.freeze({
-        rooms: [],      // [{ roomId, status/phase, maxPlayers, players? or playersCount? }]
-        loading: false
-      });
-      let state = initialState;
-
-      const render = () => {
-        $roomsList.innerHTML = "";
-        $roomsList.appendChild(viewRooms(state.rooms));
-      };
-
-      const setState = patch => {
-        state = { ...state, ...(typeof patch === "function" ? patch(state) : patch) };
-        render();
-      };
-
-      // immutable upsert/remove helpers for arrays keyed by roomId
-      const upsertRoom = (rooms, next) => {
-        const i = rooms.findIndex(r => r.roomId === next.roomId);
-        if (i === -1) return [...rooms, next];
-        // merge fields, but keep other properties if present
-        const merged = { ...rooms[i], ...next };
-        const copy = rooms.slice();
-        copy[i] = merged;
-        return copy;
-      };
-      const removeRoom = (rooms, roomId) => rooms.filter(r => r.roomId !== roomId);
-
-      // ---------------------------
-      // Thunks (compose effects + state)
-      // ---------------------------
-      // Fallback manual refresh (still useful on first load if SSE isn’t ready)
-      const refreshRooms = async () => {
-        setState({ loading: true });
-        const { ok, data } = await requestJSON("/rooms");
-        const rooms = ok && Array.isArray(data) ? data : [];
-        setState({ rooms, loading: false });
-      };
-
-      const createRoom = async () => {
-        const req = { name: "Room", maxPlayers: 8, isPrivate: false };
-        const { ok, data } = await postJSON("/rooms", req);
-        if (ok && data?.roomId != null) {
-          await joinRoom(data.roomId);
-        }
-      };
-
-      const joinRoom = async (roomId) => {
-        const displayName = readDisplayName();
-        const { ok, data } = await postJSON(`/rooms/${roomId}/join`, { displayName });
-        if (ok && data?.token) {
-          navigateToRoom(roomId, data.token);
-        } else {
-          console.error("Failed to join room", roomId);
-        }
-      };
-
-      // Lobby SSE: one stream for all rooms
-      let es = null;
-
-      const startLobbySSE = () => {
-        try {
-          es = new EventSource("/rooms/sse");
-
-          // snapshot: array of room summaries
-          es.addEventListener("snapshot", e => {
-            try {
-              const arr = JSON.parse(e.data) || [];
-              // normalize to your room shape; store playersCount from SSE
-              const normalized = arr.map(r => ({
-                roomId: r.roomId,
-                phase: r.phase || "Waiting",
-                maxPlayers: r.maxPlayers ?? 8,
-                playersCount: r.players ?? 0
-              }));
-              setState({ rooms: normalized });
-            } catch (err) {
-              console.error("SSE snapshot parse error", err);
-            }
-          });
-
-          // room: { type: 'upsert' | 'removed', roomId, players?, phase? }
-          es.addEventListener("room", e => {
-            try {
-              const ev = JSON.parse(e.data);
-              if (ev.type === "upsert") {
-                const patch = {
-                  roomId: ev.roomId,
-                  phase: ev.phase || "Waiting",
-                  playersCount: Number.isInteger(ev.players) ? ev.players : undefined
-                };
-                setState(s => ({ rooms: upsertRoom(s.rooms, patch) }));
-              } else if (ev.type === "removed") {
-                setState(s => ({ rooms: removeRoom(s.rooms, ev.roomId) }));
-              }
-            } catch (err) {
-              console.error("SSE event parse error", err);
-            }
-          });
-
-          // optional: also update on connectivity (e.g., re-request snapshot after reconnect)
-          es.addEventListener("open", () => {
-            // No-op; server already sends snapshot on a fresh connection
-          });
-          es.onerror = () => {
-            // The browser will auto-reconnect; you can optionally show a banner, etc.
-          };
-        } catch (err) {
-          console.error("Failed to start lobby SSE", err);
-        }
-      };
-
-      // ---------------------------
-      // Event wiring (minimal, delegated)
-      // ---------------------------
-      document.getElementById("createRoom").addEventListener("click", createRoom);
-      document.getElementById("refreshRooms").addEventListener("click", refreshRooms);
-
-      $roomsList.addEventListener("click", (e) => {
-        const btn = e.target.closest("button.joinBtn");
-        if (!btn) return;
-        const roomId = btn.dataset.roomId;
-        if (roomId != null) joinRoom(roomId);
-      });
-
-      // ---------------------------
-      // Boot
-      // ---------------------------
-      document.addEventListener("DOMContentLoaded", () => {
-        // Kick off SSE; if the server isn't ready yet, the Refresh button still works
-        startLobbySSE();
-        // Optional: also do one REST fetch to seed data instantly before first SSE snapshot arrives
-        refreshRooms();
-      });
-
-      // Clean up on unload (optional)
-      window.addEventListener("beforeunload", () => { try { es && es.close(); } catch { } });
-    })();
-  </script>
-</body>
-
+        // Clean up on unload (optional)
+        window.addEventListener("beforeunload", () => {
+          try {
+            es && es.close();
+          } catch {}
+        });
+      })();
+    </script>
+  </body>
 </html>
