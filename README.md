@@ -4,5 +4,5 @@ This is a Haskell implementation of Curve Fever https://en.wikipedia.org/wiki/Ac
 ## Deployment
 
 ```bash
-flyctl deploy
+fly deploy
 ```
