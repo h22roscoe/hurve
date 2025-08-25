@@ -30,7 +30,7 @@ encodeEvent ev = case ev of
   ScoreUpdate xs -> A.object ["type" .= ("score_update" :: T.Text), "score" .= [[unPid p, s] | (p, s) <- xs]]
 
 roomSSEApp :: LobbyState -> Application
-roomSSEApp LobbyState {..} req send = do
+roomSSEApp LobbyState{..} req send = do
   -- Path is /rooms/:rid/sse (already routed in Main)
   let parts = pathInfo req
   case parts of
@@ -53,12 +53,12 @@ roomSSEApp LobbyState {..} req send = do
                 pure $
                   A.encode $
                     A.object
-                      [ "type" .= ("snapshot" :: T.Text),
-                        "phase" .= show ph,
-                        "round" .= rn,
-                        "clients" .= [A.object ["pid" .= unPid p, "name" .= nm, "ready" .= M.findWithDefault False p rmap] | (p, nm) <- cls]
+                      [ "type" .= ("snapshot" :: T.Text)
+                      , "phase" .= show ph
+                      , "round" .= rn
+                      , "clients" .= [A.object ["pid" .= unPid p, "name" .= nm, "ready" .= M.findWithDefault False p rmap] | (p, nm) <- cls]
                       ]
-              let firstEvent = ServerEvent {eventName = Just "snapshot", eventId = Nothing, eventData = [lazyByteString snapshot]}
+              let firstEvent = ServerEvent{eventName = Just "snapshot", eventId = Nothing, eventData = [lazyByteString snapshot]}
               -- Bridge TChan RoomEvent -> SSE stream
               let pump = do
                     ev <- atomically $ readTChan ch
@@ -82,9 +82,9 @@ lobbySSEApp st req send = do
           ph <- readTVar (rgPhase rg)
           pure $
             A.object
-              [ "roomId" .= rid,
-                "players" .= M.size cs,
-                "phase" .= show ph
+              [ "roomId" .= rid
+              , "players" .= M.size cs
+              , "phase" .= show ph
               ]
       let firstEvent = ServerEvent (Just "snapshot") Nothing [lazyByteString $ A.encode snapshot]
       -- event pump
@@ -94,15 +94,15 @@ lobbySSEApp st req send = do
             let v = case ev of
                   LobbyRoomUpsert r n ph ->
                     A.object
-                      [ "type" .= ("upsert" :: T.Text),
-                        "roomId" .= r,
-                        "players" .= n,
-                        "phase" .= show ph
+                      [ "type" .= ("upsert" :: T.Text)
+                      , "roomId" .= r
+                      , "players" .= n
+                      , "phase" .= show ph
                       ]
                   LobbyRoomRemoved r ->
                     A.object
-                      [ "type" .= ("removed" :: T.Text),
-                        "roomId" .= r
+                      [ "type" .= ("removed" :: T.Text)
+                      , "roomId" .= r
                       ]
             pure (ServerEvent (Just "room") Nothing [lazyByteString $ A.encode v])
       sentVar <- newMVar False

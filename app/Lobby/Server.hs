@@ -31,17 +31,17 @@ mkApp :: LobbyState -> Application
 mkApp st = simpleCors $ serve lobbyApi (server st)
 
 createRoomH :: LobbyState -> CreateRoomReq -> Handler CreateRoomRes
-createRoomH LobbyState {..} CreateRoomReq {} = do
+createRoomH LobbyState{..} CreateRoomReq{} = do
   rid <- RoomId <$> liftIO nextRandom
   rg <- liftIO (startRoomGame rid >>= flip launchTick 60)
   liftIO . atomically $ do
     modifyTVar' lsRooms (M.insert rid rg)
     writeTChan lsLobbyEvents (LobbyRoomUpsert rid 0 Waiting)
   let ws = T.pack ("ws://localhost:9160/ws/" <> show rid)
-  pure CreateRoomRes {roomId = rid, wsUrl = ws}
+  pure CreateRoomRes{roomId = rid, wsUrl = ws}
 
 listRoomsH :: LobbyState -> Handler [RoomMeta]
-listRoomsH LobbyState {..} = do
+listRoomsH LobbyState{..} = do
   rms <- liftIO $ readTVarIO lsRooms
   liftIO $ forM (M.toList rms) $ \(rid, rg) -> atomically $ do
     clients <- readTVar (rgClients rg)
@@ -49,16 +49,16 @@ listRoomsH LobbyState {..} = do
     let names = map (cName . snd) (M.toList clients)
     pure
       RoomMeta
-        { roomId = rid,
-          name = "Room",
-          maxPlayers = 8,
-          isPrivate = False,
-          status = T.pack (show ph),
-          players = names
+        { roomId = rid
+        , name = "Room"
+        , maxPlayers = 8
+        , isPrivate = False
+        , status = T.pack (show ph)
+        , players = names
         }
 
 joinRoomH :: LobbyState -> RoomId -> JoinReq -> Handler JoinRes
-joinRoomH LobbyState {..} rid JoinReq {..} = do
+joinRoomH LobbyState{..} rid JoinReq{..} = do
   rms <- liftIO $ readTVarIO lsRooms
   case M.lookup rid rms of
     Nothing -> throwError err404
@@ -67,10 +67,10 @@ joinRoomH LobbyState {..} rid JoinReq {..} = do
       pid <- hashUnique <$> liftIO newUnique
       liftIO . atomically $ modifyTVar' lsTokens (M.insert tok (rid, PlayerId pid, displayName))
       let ws = T.pack ("ws://localhost:9160/ws/" <> show rid <> "/" <> show tok)
-      pure JoinRes {token = tok, pid = pid, wsUrl = ws}
+      pure JoinRes{token = tok, pid = pid, wsUrl = ws}
 
 readyH :: LobbyState -> RoomId -> ReadyReq -> Handler NoContent
-readyH LobbyState {..} rid ReadyReq {..} = do
+readyH LobbyState{..} rid ReadyReq{..} = do
   rms <- liftIO $ readTVarIO lsRooms
   case M.lookup rid rms of
     Nothing -> throwError err404
@@ -96,7 +96,7 @@ readyH LobbyState {..} rid ReadyReq {..} = do
         _ -> throwError err403
 
 deleteH :: LobbyState -> RoomId -> Handler NoContent
-deleteH LobbyState {..} rid = do
+deleteH LobbyState{..} rid = do
   mrt <- liftIO . atomically $ do
     rms <- readTVar lsRooms
     writeTVar lsRooms (M.delete rid rms)

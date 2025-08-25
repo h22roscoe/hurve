@@ -31,7 +31,7 @@ data JoinRes = JoinRes {token :: JoinToken, pid :: Int, wsUrl :: Text} deriving 
 
 instance ToJSON JoinRes
 
-data ReadyReq = ReadyReq { token :: JoinToken, ready :: Bool } deriving (Generic, Show)
+data ReadyReq = ReadyReq {token :: JoinToken, ready :: Bool} deriving (Generic, Show)
 
 instance FromJSON ReadyReq
 

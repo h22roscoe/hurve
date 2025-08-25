@@ -59,23 +59,23 @@ instance ToJSON GapState
 instance FromJSON GapState
 
 data Player = Player
-  { pid :: !PlayerId,
-    pos :: !Pos,
-    dir :: !Coord,
-    alive :: !Bool,
-    gap :: !GapState,
-    rng :: !StdGen
+  { pid :: !PlayerId
+  , pos :: !Pos
+  , dir :: !Coord
+  , alive :: !Bool
+  , gap :: !GapState
+  , rng :: !StdGen
   }
   deriving (Show, Generic)
 
 instance ToJSON Player where
-  toJSON Player {..} =
+  toJSON Player{..} =
     A.object
-      [ "pid" A..= pid,
-        "pos" A..= pos,
-        "dir" A..= dir,
-        "alive" A..= alive,
-        "gap" A..= gap
+      [ "pid" A..= pid
+      , "pos" A..= pos
+      , "dir" A..= dir
+      , "alive" A..= alive
+      , "gap" A..= gap
       ]
 
 instance FromJSON Player where
@@ -86,7 +86,7 @@ instance FromJSON Player where
     alive <- o A..: "alive"
     gap <- o A..: "gap"
     let rng = mkStdGen (unPid pid)
-    pure Player {..}
+    pure Player{..}
 
 -- Server-side world
 type Cell = (Int, Int)
@@ -94,20 +94,20 @@ type Cell = (Int, Int)
 type Trail = M.Map Cell (PlayerId, Int) -- (owner, paintedTick)
 
 data World = World
-  { tick :: !Time,
-    width :: !Coord,
-    height :: !Coord,
-    speed :: !Coord,
-    turnRate :: !Coord,
-    headRadiusPx :: !Int,
-    tailRadiusPx :: !Int,
-    gapCoolMin :: !Int,
-    gapCoolMax :: !Int,
-    gapDurMin :: !Int,
-    gapDurMax :: !Int,
-    seed :: !Word64,
-    trails :: !Trail,
-    players :: ![Player]
+  { tick :: !Time
+  , width :: !Coord
+  , height :: !Coord
+  , speed :: !Coord
+  , turnRate :: !Coord
+  , headRadiusPx :: !Int
+  , tailRadiusPx :: !Int
+  , gapCoolMin :: !Int
+  , gapCoolMax :: !Int
+  , gapDurMin :: !Int
+  , gapDurMax :: !Int
+  , seed :: !Word64
+  , trails :: !Trail
+  , players :: ![Player]
   }
   deriving (Show, Generic)
 

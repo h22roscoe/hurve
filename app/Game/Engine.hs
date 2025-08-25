@@ -36,12 +36,12 @@ paintPath :: Int -> [(Int, Int)] -> S.Set (Int, Int)
 paintPath r = foldl' (\acc c -> S.union acc (S.fromList (vecDisc r c))) S.empty
 
 advanceGap :: World -> Player -> Player
-advanceGap World {..} p =
+advanceGap World{..} p =
   let (durT, durR) = uniformR (gapDurMin, gapDurMax) (rng p)
       (coolT, coolR) = uniformR (gapCoolMin, gapCoolMax) (rng p)
    in case gap p of
-        Solid tStart | tick >= tStart -> p {gap = Gapping (tick + durT), rng = durR}
-        Gapping tEnd | tick >= tEnd -> p {gap = Solid (tick + coolT), rng = coolR}
+        Solid tStart | tick >= tStart -> p{gap = Gapping (tick + durT), rng = durR}
+        Gapping tEnd | tick >= tEnd -> p{gap = Solid (tick + coolT), rng = coolR}
         _ -> p
 
 isGapping :: Player -> Bool
@@ -49,14 +49,14 @@ isGapping p = case gap p of Gapping _ -> True; _ -> False
 
 startPositions :: Double -> Double -> [(Double, Double, Double)]
 startPositions w h =
-  [ (w / 4, h / 4, 0),
-    (3 * w / 4, h / 4, pi),
-    (w / 4, 3 * h / 4, pi / 2),
-    (3 * w / 4, 3 * h / 4, 3 * pi / 2),
-    (w / 2, h / 4, pi / 2),
-    (w / 2, 3 * h / 4, 3 * pi / 2),
-    (w / 4, h / 2, 0),
-    (3 * w / 4, h / 2, pi)
+  [ (w / 4, h / 4, 0)
+  , (3 * w / 4, h / 4, pi)
+  , (w / 4, 3 * h / 4, pi / 2)
+  , (3 * w / 4, 3 * h / 4, 3 * pi / 2)
+  , (w / 2, h / 4, pi / 2)
+  , (w / 2, 3 * h / 4, 3 * pi / 2)
+  , (w / 4, h / 2, 0)
+  , (3 * w / 4, h / 2, pi)
   ]
 
 -- Step the world by one tick. Returns (newWorld, deltaAdd, didReset, deltaRemove, survivors)
@@ -66,7 +66,7 @@ stepWorld ::
   [(PlayerId, Turn)] ->
   World ->
   (World, S.Set (Int, Int), Bool, S.Set (Int, Int), [PlayerId])
-stepWorld now noCollideUntil inputs w0@World {..} =
+stepWorld now noCollideUntil inputs w0@World{..} =
   let turnOf pid' = fromMaybe Straight (lookup pid' inputs)
       dtheta = \case TurnLeft -> negate turnRate; TurnRight -> turnRate; Straight -> 0
 
@@ -76,8 +76,8 @@ stepWorld now noCollideUntil inputs w0@World {..} =
             let th' = dir p + dtheta (turnOf (pid p))
                 p' =
                   p
-                    { dir = th',
-                      pos =
+                    { dir = th'
+                    , pos =
                         Pos
                           (px (pos p) + speed * cos th')
                           (py (pos p) + speed * sin th')
@@ -129,14 +129,14 @@ stepWorld now noCollideUntil inputs w0@World {..} =
                   if alive'
                     then M.union paintedMap newPaintMap
                     else paintedMap
-                pFinal = if alive' then p' else p' {alive = False}
+                pFinal = if alive' then p' else p'{alive = False}
              in (painted', pFinal : psAcc)
 
       (newlyPaintedMap, psRev) = foldl stepAcc (M.empty, []) movedWithCell
       players1 = reverse psRev
       trails1 = M.union trails newlyPaintedMap
 
-      w1Base = w0 {tick = tick + 1, players = players1, trails = trails1}
+      w1Base = w0{tick = tick + 1, players = players1, trails = trails1}
       aliveP = [pid p | p <- players1, alive p]
       doReset = length aliveP <= 1
 
@@ -147,27 +147,27 @@ stepWorld now noCollideUntil inputs w0@World {..} =
    in (w1, deltaAdd, doReset, deltaRem, aliveP)
 
 resetWorld :: [PlayerId] -> World -> World
-resetWorld pids w@World {..} = do
+resetWorld pids w@World{..} = do
   let basePositions = startPositions width height
   let shuffledPositions = shuffle' basePositions (length basePositions) (mkStdGen64 seed)
   let chosen = take (length pids) shuffledPositions
       ps = zipWith mkPlayer pids chosen
   w
-    { tick = 0,
-      trails = M.empty,
-      players = ps
+    { tick = 0
+    , trails = M.empty
+    , players = ps
     }
-  where
-    mkPlayer pid (x, y, theta) =
-      let (cool, rng') = uniformR (gapCoolMin, gapCoolMax) (mkStdGen (unPid pid))
-       in Player
-            { pid = pid,
-              pos = Pos x y,
-              dir = theta,
-              gap = Solid (tick + cool),
-              alive = True,
-              rng = rng'
-            }
+ where
+  mkPlayer pid (x, y, theta) =
+    let (cool, rng') = uniformR (gapCoolMin, gapCoolMax) (mkStdGen (unPid pid))
+     in Player
+          { pid = pid
+          , pos = Pos x y
+          , dir = theta
+          , gap = Solid (tick + cool)
+          , alive = True
+          , rng = rng'
+          }
 
 initialWorld :: IO World
 initialWorld = do
@@ -184,18 +184,18 @@ initialWorld = do
       seed0 = 0xDEADBEEFCAFEBABE
   pure
     World
-      { tick = 0,
-        width = fromIntegral w,
-        height = fromIntegral h,
-        speed = speed',
-        turnRate = turn',
-        headRadiusPx = headR,
-        tailRadiusPx = tailR,
-        gapCoolMin = cmin,
-        gapCoolMax = cmax,
-        gapDurMin = dmin,
-        gapDurMax = dmax,
-        seed = seed0,
-        trails = M.empty,
-        players = []
+      { tick = 0
+      , width = fromIntegral w
+      , height = fromIntegral h
+      , speed = speed'
+      , turnRate = turn'
+      , headRadiusPx = headR
+      , tailRadiusPx = tailR
+      , gapCoolMin = cmin
+      , gapCoolMax = cmax
+      , gapDurMin = dmin
+      , gapDurMax = dmax
+      , seed = seed0
+      , trails = M.empty
+      , players = []
       }

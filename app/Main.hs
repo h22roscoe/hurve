@@ -16,7 +16,7 @@ import Network.Wai.Handler.Warp (run)
 import Network.Wai.Handler.WebSockets (websocketsOr)
 import qualified Network.WebSockets as WS
 import Room.Runtime
-import Web.SSE (roomSSEApp, lobbySSEApp)
+import Web.SSE (lobbySSEApp, roomSSEApp)
 import Web.WS (roomWebSocket)
 
 main :: IO ()
@@ -34,7 +34,7 @@ withSSE st rest req send = do
   let p = pathInfo req
   case p of
     ["rooms", _ridTxt, "sse"] -> roomSSEApp st req send
-    ["rooms", "sse"]         -> lobbySSEApp st req send
+    ["rooms", "sse"] -> lobbySSEApp st req send
     _ -> rest req send
 
 wsRouter :: LobbyState -> WS.ServerApp
