@@ -32,6 +32,7 @@ common common-settings
                     , uuid-types ==1.0.6
                     , vector ==0.13.2.0
                     , wai ==3.2.4
+                    , wai-app-static ==3.1.9
                     , wai-cors ==0.2.7
                     , wai-extra ==3.1.17
                     , wai-middleware-static ==0.9.3

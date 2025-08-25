@@ -17,15 +17,24 @@ import Data.UUID.V4 (nextRandom)
 import Data.Unique (hashUnique, newUnique)
 import Game.Types
 import Lobby.API
+import Network.Wai.Application.Static (StaticSettings, defaultWebAppSettings, ssIndices, ssRedirectToIndex)
 import Network.Wai.Middleware.Cors (simpleCors)
 import Room.Runtime
 import Servant
+import WaiAppStatic.Types (unsafeToPiece)
 
 lobbyApi :: Proxy LobbyAPI
 lobbyApi = Proxy
 
+staticSettings :: StaticSettings
+staticSettings =
+  (defaultWebAppSettings "static")
+    { ssIndices = [unsafeToPiece "index.html"]
+    , ssRedirectToIndex = True
+    }
+
 server :: LobbyState -> Server LobbyAPI
-server st = createRoomH st :<|> listRoomsH st :<|> joinRoomH st :<|> readyH st :<|> deleteH st :<|> serveDirectoryWebApp "static"
+server st = createRoomH st :<|> listRoomsH st :<|> joinRoomH st :<|> readyH st :<|> deleteH st :<|> serveDirectoryWith staticSettings
 
 mkApp :: LobbyState -> Application
 mkApp st = simpleCors $ serve lobbyApi (server st)
