@@ -4,94 +4,26 @@
     <meta charset="utf-8" />
     <title>Hurve Room</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <style>
-      :root {
-        --bg: #0b0d12;
-        --fg: #e8eef8;
-        --muted: #94a3b8;
-        --accent: #22d3ee;
-      }
-
-      html,
-      body {
-        height: 100%;
-        margin: 0;
-        background: var(--bg);
-        color: var(--fg);
-        font: 14px/1.35 system-ui, -apple-system, "Segoe UI", Roboto, Ubuntu,
-          Cantarell, "Helvetica Neue", Arial, sans-serif;
-      }
-
-      .wrap {
-        display: flex;
-        flex-direction: column;
-        height: 100%;
-      }
-
-      header {
-        padding: 10px 12px;
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        border-bottom: 1px solid #1f2937;
-      }
-
-      #phase,
-      #round {
-        min-width: 50px;
-      }
-
-      .scoreboard {
-        margin-left: auto;
-        display: flex;
-        gap: 12px;
-      }
-
-      .scoreboard .player {
-        display: flex;
-        align-items: center;
-        gap: 4px;
-      }
-
-      .scoreboard .dot {
-        width: 10px;
-        height: 10px;
-        border-radius: 50%;
-        display: inline-block;
-      }
-
-      #arena {
-        flex: 1;
-        display: grid;
-        place-items: center;
-        padding: 12px;
-      }
-
-      canvas {
-        background: #000;
-        box-shadow: 0 8px 30px rgba(0, 0, 0, 0.45);
-        border-radius: 12px;
-        image-rendering: pixelated;
-      }
-
-      footer {
-        padding: 10px 12px;
-        border-top: 1px solid #1f2937;
-        color: var(--muted);
-      }
-    </style>
+    <link href="/app.css" type="text/css" rel="stylesheet" />
   </head>
 
   <body>
     <div class="wrap">
       <header>
-        <strong>Hurve Room</strong>
-        <span>Round: <span id="round">—</span></span>
-        <span>Phase: <span id="phase">—</span></span>
-        <div class="scoreboard" id="scoreboard"></div>
+        <div class="row container">
+          <strong class="brand">Hurve Room</strong>
+          <span>Round: <span id="round">—</span></span>
+          <span class="badge"
+            ><span class="badge-dot"></span>Phase:
+            <span id="phase">—</span></span
+          >
+          <div class="scoreboard" id="scoreboard"></div>
+        </div>
       </header>
-      <div id="arena">
-        <canvas id="canvas" width="800" height="600"></canvas>
+      <div id="arena" class="container">
+        <div class="canvas-wrap">
+          <canvas id="canvas" width="800" height="600"></canvas>
+        </div>
       </div>
       <footer>
         Controls: &larr;/A turn left, &rarr;/D turn right, release = straight.
@@ -248,17 +180,16 @@
         };
 
         const updateScoreboard = (scoreList) => {
-          scoreboardDiv.innerHTML = "";
+          const el = document.getElementById("scoreboard");
+          el.innerHTML = "";
           if (!Array.isArray(scoreList)) return;
           for (const [pid, pts] of scoreList) {
-            const span = document.createElement("span");
-            span.className = "player";
-            const dot = document.createElement("span");
-            dot.className = "dot";
-            dot.style.background = colorFor(pid);
-            span.appendChild(dot);
-            span.appendChild(document.createTextNode("P" + pid + ": " + pts));
-            scoreboardDiv.appendChild(span);
+            const s = document.createElement("span");
+            s.className = "score";
+            s.innerHTML = `<span class="dot" style="background:${colorFor(
+              pid
+            )}"></span>P${pid}: ${pts}`;
+            el.appendChild(s);
           }
         };
 

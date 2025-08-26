@@ -4,93 +4,24 @@
     <meta charset="utf-8" />
     <title>Hurve Room – Waiting</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <style>
-      :root {
-        --bg: #0b0d12;
-        --fg: #e8eef8;
-        --muted: #94a3b8;
-        --accent: #22d3ee;
-      }
-
-      html,
-      body {
-        height: 100%;
-        margin: 0;
-        background: var(--bg);
-        color: var(--fg);
-        font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, Ubuntu,
-          Cantarell, Arial, sans-serif;
-      }
-
-      .wrap {
-        display: flex;
-        flex-direction: column;
-        height: 100%;
-      }
-
-      header,
-      footer {
-        padding: 10px 12px;
-        border-bottom: 1px solid #1f2937;
-      }
-
-      footer {
-        border-bottom: none;
-        border-top: 1px solid #1f2937;
-        color: var(--muted);
-      }
-
-      main {
-        flex: 1;
-        padding: 12px;
-      }
-
-      ul {
-        list-style: none;
-        padding: 0;
-        margin: 0;
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-      }
-
-      li {
-        background: #0f172a;
-        padding: 8px 10px;
-        border-radius: 6px;
-      }
-
-      button {
-        padding: 6px 12px;
-        border: none;
-        border-radius: 6px;
-        background: var(--accent);
-        color: #000;
-        cursor: pointer;
-      }
-
-      .row {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-      }
-
-      .grow {
-        flex: 1;
-      }
-    </style>
+    <link href="/app.css" type="text/css" rel="stylesheet" />
   </head>
 
   <body>
     <div class="wrap">
-      <header class="row">
-        <strong>Room – Waiting</strong>
-        <span id="phase" class="grow">Phase: Waiting</span>
-        <button id="readyBtn" title="Ready">Ready</button>
+      <header>
+        <div class="row container">
+          <strong class="brand">Room – Waiting</strong>
+          <span id="phase" class="badge"
+            ><span class="badge-dot"></span>Phase: Waiting</span
+          >
+          <div class="spacer"></div>
+          <button id="readyBtn" class="btn" title="Ready">Ready</button>
+        </div>
       </header>
-      <main>
+      <main class="container">
         <h3>Players</h3>
-        <ul id="players"></ul>
+        <ul id="players" class="list"></ul>
       </main>
       <footer>
         This view will automatically switch to the game when the round starts.
@@ -135,7 +66,7 @@
               Object.assign(el.style, v);
             else el.setAttribute(k, v);
           }
-          for (const c of [].concat(children)) {
+          for (const c of children) {
             el.appendChild(
               typeof c === "string" ? document.createTextNode(c) : c
             );
@@ -144,11 +75,13 @@
         };
         const t = (s) => document.createTextNode(s);
 
-        const viewPlayer = ({ pid, name, ready }) =>
-          h("li", {}, [
-            h("span", { id: `player-${pid}` }, [name]),
-            h("span", { class: "readiness", style: { marginLeft: "0.5rem" } }, [
-              ready ? "🚀" : "⏳",
+        const viewPlayer = ({ pid, name = "Guest", ready = false }) =>
+          h("li", { class: "list-item" }, [
+            h("div", { class: "avatar", id: `player-${pid}` }, [`P${pid}`]),
+            h("div", { class: "grow" }, [name]),
+            h("span", { class: `badge ${ready ? "badge--ok" : ""}` }, [
+              h("span", { class: "badge-dot" }, []),
+              ready ? "Ready" : "Waiting",
             ]),
           ]);
 

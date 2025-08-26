@@ -4,105 +4,30 @@
     <meta charset="utf-8" />
     <title>Hurve Lobby</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <style>
-      :root {
-        /* Dark theme colours */
-        --bg: #0b0d12;
-        --fg: #e8eef8;
-        --muted: #94a3b8;
-        --accent: #22d3ee;
-      }
-
-      html,
-      body {
-        height: 100%;
-        margin: 0;
-        background: var(--bg);
-        color: var(--fg);
-        font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, Ubuntu,
-          Cantarell, "Helvetica Neue", Arial, sans-serif;
-      }
-
-      .wrap {
-        display: flex;
-        flex-direction: column;
-        height: 100%;
-      }
-
-      header {
-        padding: 10px 12px;
-        display: flex;
-        flex-wrap: wrap;
-        gap: 12px;
-        align-items: center;
-        border-bottom: 1px solid #1f2937;
-      }
-
-      header input {
-        padding: 4px 8px;
-        border: 1px solid #374151;
-        border-radius: 6px;
-        background: #111827;
-        color: var(--fg);
-      }
-
-      header button {
-        padding: 6px 12px;
-        border: none;
-        border-radius: 6px;
-        background: var(--accent);
-        color: #000;
-        cursor: pointer;
-      }
-
-      main {
-        flex: 1;
-        overflow-y: auto;
-        padding: 12px;
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-      }
-
-      .room {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        background: #0f172a;
-        border-radius: 6px;
-        padding: 8px 12px;
-      }
-
-      .room button {
-        margin-left: auto;
-        padding: 4px 8px;
-        border: none;
-        border-radius: 4px;
-        background: var(--accent);
-        color: #000;
-        cursor: pointer;
-      }
-
-      footer {
-        padding: 10px 12px;
-        border-top: 1px solid #1f2937;
-        color: var(--muted);
-      }
-    </style>
+    <link href="/app.css" type="text/css" rel="stylesheet" />
   </head>
 
   <body>
     <div class="wrap">
       <header>
-        <strong>Hurve Lobby</strong>
-        <label
-          >Name: <input id="displayName" type="text" placeholder="Your name"
-        /></label>
-        <button id="createRoom">Create Room</button>
-        <button id="refreshRooms">Refresh</button>
+        <div class="row container">
+          <span class="brand">Hurve Lobby</span>
+          <label>
+            Name:
+            <input
+              id="displayName"
+              class="input"
+              type="text"
+              placeholder="Your name"
+            />
+          </label>
+          <div class="spacer"></div>
+          <button id="createRoom" class="btn">Create Room</button>
+          <button id="refreshRooms" class="btn btn-secondary">Refresh</button>
+        </div>
       </header>
-      <main id="roomsList">
-        <!-- Rooms will appear here -->
+      <main class="container">
+        <div id="roomsList" class="grid grid--rooms"></div>
       </main>
       <footer>
         Select a room to play Curve Fever. Use the controls in game: left/right
@@ -141,7 +66,7 @@
               el.addEventListener(k.slice(2).toLowerCase(), v);
             else el.setAttribute(k, v);
           }
-          for (const c of [].concat(children)) {
+          for (const c of children) {
             el.appendChild(
               typeof c === "string" ? document.createTextNode(c) : c
             );
@@ -159,13 +84,24 @@
           const frag = document.createDocumentFragment();
           for (const room of rooms) {
             frag.appendChild(
-              h("div", { class: "room" }, [
-                h("span", {}, ["Room " + formatRoomId(room.roomId)]),
-                h("span", {}, [" (" + deriveStatus(room) + ") "]),
-                h("span", {}, [countPlayers(room) + "/" + maxPlayers(room)]),
+              h("div", { class: "card" }, [
+                h("div", { class: "meta" }, [
+                  h("div", { class: "title" }, [
+                    "Room " + formatRoomId(room.roomId),
+                  ]),
+                  h("div", { class: "sub" }, [
+                    h("span", { class: "badge" }, [
+                      h("span", { class: "badge-dot" }, []),
+                      deriveStatus(room),
+                      `\u00A0 ${
+                        countPlayers(room) + "/" + maxPlayers(room)
+                      } players`,
+                    ]),
+                  ]),
+                ]),
                 h(
                   "button",
-                  { class: "joinBtn", dataset: { roomId: room.roomId } },
+                  { class: "btn joinBtn", dataset: { roomId: room.roomId } },
                   ["Join"]
                 ),
               ])

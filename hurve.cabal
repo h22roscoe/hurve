@@ -9,7 +9,7 @@ maintainer:         h22roscoe@gmail.com
 category:           Game
 build-type:         Simple
 extra-doc-files:    CHANGELOG.md
-extra-source-files: static/index.html, static/room_game.html, static/room_waiting.html
+extra-source-files: static/index.html, static/room_game.html, static/room_waiting.html, static/app.css
 
 common common-settings
     ghc-options:      -O2 -Wall -threaded -rtsopts -with-rtsopts=-N
