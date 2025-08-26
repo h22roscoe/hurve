@@ -5,7 +5,7 @@
 
 module Game.Types where
 
-import Data.Aeson (FromJSON (..), ToJSON (..))
+import Data.Aeson (FromJSON (..), ToJSON (..), (.:), (.=))
 import qualified Data.Aeson as A
 import qualified Data.Map as M
 import Data.Word (Word64)
@@ -71,20 +71,20 @@ data Player = Player
 instance ToJSON Player where
   toJSON Player{..} =
     A.object
-      [ "pid" A..= pid
-      , "pos" A..= pos
-      , "dir" A..= dir
-      , "alive" A..= alive
-      , "gap" A..= gap
+      [ "pid" .= pid
+      , "pos" .= pos
+      , "dir" .= dir
+      , "alive" .= alive
+      , "gap" .= gap
       ]
 
 instance FromJSON Player where
   parseJSON = A.withObject "Player" $ \o -> do
-    pid <- o A..: "pid"
-    pos <- o A..: "pos"
-    dir <- o A..: "dir"
-    alive <- o A..: "alive"
-    gap <- o A..: "gap"
+    pid <- o .: "pid"
+    pos <- o .: "pos"
+    dir <- o .: "dir"
+    alive <- o .: "alive"
+    gap <- o .: "gap"
     let rng = mkStdGen (unPid pid)
     pure Player{..}
 
