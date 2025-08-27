@@ -100,7 +100,12 @@
             const pid = Number(pidStr);
             const p = new Path2D();
             for (const { x, y } of groups[pid]) {
-              p.rect(Math.round(x * SCALE), Math.round(y * SCALE), 1, 1);
+              p.rect(
+                Math.round(x * SCALE),
+                Math.round(y * SCALE),
+                SCALE,
+                SCALE
+              );
             }
             paths.set(pid, p);
           }
@@ -137,45 +142,135 @@
           ctx.clearRect(0, 0, canvas.width, canvas.height);
         };
 
-        const drawPaths = (paths, players) => {
-          // If players provided, draw in that order (stable color layering); otherwise iterate paths map.
-          if (Array.isArray(players)) {
-            for (const p of players) {
-              const path = paths.get(p.pid);
-              if (!path) continue;
-              ctx.fillStyle = colorFor(p.pid);
-              ctx.fill(path);
-            }
-          } else {
-            for (const [pid, path] of paths) {
-              ctx.fillStyle = colorFor(pid);
-              ctx.fill(path);
-            }
+        const drawPaths = (paths) => {
+          for (const [pid, path] of paths) {
+            ctx.strokeStyle = colorFor(pid);
+            ctx.stroke(path);
           }
         };
 
         const drawPlayers = (world) => {
           if (!world || !world.players) return;
+
+          // tiny helpers for color tweaks
+          const hexToRgb = (hex) => {
+            const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+            if (!m) return { r: 255, g: 255, b: 255 };
+            return {
+              r: parseInt(m[1], 16),
+              g: parseInt(m[2], 16),
+              b: parseInt(m[3], 16),
+            };
+          };
+          const rgbToCss = ({ r, g, b }, a = 1) =>
+            `rgba(${r | 0},${g | 0},${b | 0},${a})`;
+          const shade = (hex, k) => {
+            // k in [-1,1]; <0 darken, >0 lighten
+            const { r, g, b } = hexToRgb(hex);
+            const mix = (c) =>
+              Math.max(0, Math.min(255, c + (k >= 0 ? (255 - c) * k : c * k)));
+            return rgbToCss({ r: mix(r), g: mix(g), b: mix(b) });
+          };
+
           for (const p of world.players) {
             const x = Number(p.pos.px) * SCALE;
             const y = Number(p.pos.py) * SCALE;
             const r = (world.headRadiusPx || 2) * SCALE;
+            const theta = Number(p.dir);
+            const base = colorFor(p.pid);
+            const alive = !!p.alive;
 
+            // choose palette
+            const fillLight = shade(base, 0.35);
+            const fillDark = shade(base, -0.35);
+            const ringColor = shade(base, -0.55);
+            const noseColor = "#ffffff";
+
+            // draw head with gradient + ring, rotated to face dir
+            ctx.save();
+            ctx.translate(x, y);
+            ctx.rotate(theta);
+
+            // soft drop shadow (cheap)
+            ctx.save();
+            ctx.globalAlpha = 0.25;
             ctx.beginPath();
-            ctx.arc(x, y, r, 0, Math.PI * 2);
-            ctx.fillStyle = p.alive ? colorFor(p.pid) : "rgba(120,120,120,0.7)";
+            ctx.ellipse(0, r * 0.25, r * 0.95, r * 0.55, 0, 0, Math.PI * 2);
+            ctx.fillStyle = "black";
+            ctx.fill();
+            ctx.restore();
+
+            // glossy fill
+            const g = ctx.createRadialGradient(
+              -r * 0.3,
+              -r * 0.3,
+              r * 0.2,
+              0,
+              0,
+              r
+            );
+            g.addColorStop(0, fillLight);
+            g.addColorStop(1, fillDark);
+            ctx.beginPath();
+            ctx.arc(0, 0, r, 0, Math.PI * 2);
+            ctx.fillStyle = alive ? g : "rgba(120,120,120,0.7)"; // dead = greyed
             ctx.fill();
 
-            const theta = Number(p.dir);
-            ctx.beginPath();
-            ctx.moveTo(x, y);
-            ctx.lineTo(
-              x + Math.cos(theta) * (r + 4),
-              y + Math.sin(theta) * (r + 4)
-            );
-            ctx.strokeStyle = "#ffffff";
-            ctx.lineWidth = 1;
+            // rim/ring
+            ctx.lineWidth = Math.max(1, r * 0.18);
+            ctx.strokeStyle = alive ? ringColor : "rgba(80,80,80,0.6)";
             ctx.stroke();
+
+            if (alive) {
+              // small forward wedge “nose”
+              ctx.beginPath();
+              ctx.moveTo(r * 1.05, 0);
+              ctx.lineTo(r * 0.55, r * 0.28);
+              ctx.lineTo(r * 0.55, -r * 0.28);
+              ctx.closePath();
+              ctx.fillStyle = noseColor;
+              ctx.globalAlpha = 0.9;
+              ctx.fill();
+              ctx.globalAlpha = 1;
+
+              // eyes (white) + pupils (dark), slightly forward & spaced
+              const eyeY = r * 0.28;
+              const eyeX = r * 0.15;
+              const eyeR = Math.max(1, r * 0.18);
+              const pupilR = Math.max(1, r * 0.1);
+
+              // whites
+              ctx.beginPath();
+              ctx.arc(eyeX, eyeY, eyeR, 0, Math.PI * 2);
+              ctx.arc(eyeX, -eyeY, eyeR, 0, Math.PI * 2);
+              ctx.fillStyle = "white";
+              ctx.fill();
+
+              // pupils—biased forward
+              ctx.beginPath();
+              ctx.arc(eyeX + r * 0.1, eyeY * 0.75, pupilR, 0, Math.PI * 2);
+              ctx.arc(eyeX + r * 0.1, -eyeY * 0.75, pupilR, 0, Math.PI * 2);
+              ctx.fillStyle = "rgba(20,20,30,0.95)";
+              ctx.fill();
+
+              // tiny specular highlight
+              ctx.beginPath();
+              ctx.arc(-r * 0.35, -r * 0.35, r * 0.18, 0, Math.PI * 2);
+              ctx.fillStyle = "rgba(255,255,255,0.25)";
+              ctx.fill();
+            } else {
+              // crossed-out eyes for dead players (fun!)
+              ctx.lineWidth = Math.max(1, r * 0.12);
+              ctx.strokeStyle = "rgba(40,40,40,0.9)";
+              ctx.beginPath();
+              ctx.moveTo(-r * 0.35, -r * 0.35);
+              ctx.lineTo(r * 0.35, r * 0.35);
+              ctx.moveTo(-r * 0.35, r * 0.35);
+              ctx.lineTo(r * 0.35, -r * 0.35);
+              ctx.stroke();
+            }
+
+            ctx.restore();
           }
         };
 
@@ -378,9 +473,10 @@
         // Render loop
         // -----------------------------
         const frame = () => {
+          clearCanvasHard();
           // Trail (paths) first, then players on top
           const { pathsByPid, world } = state;
-          drawPaths(pathsByPid, world?.players);
+          drawPaths(pathsByPid);
           drawPlayers(world);
           requestAnimationFrame(frame);
         };
