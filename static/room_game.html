@@ -149,7 +149,7 @@
           }
         };
 
-        function drawPlayers(world) {
+        const drawPlayers = (world) => {
           if (!world || !world.players) return;
 
           // tiny helpers for color tweaks
@@ -272,7 +272,7 @@
 
             ctx.restore();
           }
-        }
+        };
 
         const updateScoreboard = (scoreList) => {
           const el = document.getElementById("scoreboard");
